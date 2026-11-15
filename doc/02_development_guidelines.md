@@ -17,6 +17,7 @@ This document defines the coding standards and architectural rules for the **Aud
 * **RAII Resource Management:** Initialize COM via `ComGuard` and pair OS handles/allocations (`OpenProcess`/`CloseHandle`, `GetId`/`CoTaskMemFree`) immediately in small helper functions so leaks cannot occur on early returns.
 * **Input Clamping:** Clamp all normalized volume scalars to `0.0..=1.0` at the `audio-core` boundary before passing them to WASAPI.
 * **Isolate Undocumented APIs:** Undocumented Windows interfaces (`IPolicyConfig`, `IAudioPolicyConfigFactory`) must be isolated in dedicated modules with clear trait/struct wrappers so Windows build quirks are contained in one place.
+* **Verify Reference Signatures Before Coding:** When implementing any undocumented COM/WinRT interface, verify the exact IID, base interface (`IUnknown` vs. `IInspectable`), slot count, and parameter ABI types (`HSTRING` vs. `PCWSTR`, SWD path vs. endpoint ID) against a canonical reference implementation (e.g., EarTrumpet) before writing vtable stubs.
 
 ## 4. Live Hardware Testing Hygiene
 * **Apply & Undo:** Experimental steps should record initial state, apply the change, verify via readback, and restore the original state before exiting.

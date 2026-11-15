@@ -68,17 +68,23 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
   * Added `AudioEnumerator::default_endpoint_id` to `enumerator.rs`.
   * Removed direct `windows` / `windows-core` dependencies from `crates/steel-thread/Cargo.toml` so `steel-thread` depends solely on `audio-core`.
 
+### Step 4: Per-App Output Device Routing (`IAudioPolicyConfigFactory`)
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [policy.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/policy.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/steel-thread/src/main.rs)
+* **What Was Tested:**
+  * Activated `Windows.Media.Internal.AudioPolicyConfig` via `RoGetActivationFactory` (matched `V2` IID `{ab3d4648-e242-459f-b02f-541c70306324}`).
+  * Routed active `vivaldi.exe` (`pid=15828`) from `PC Primary (NVIDIA High Definition Audio)` to `Speakers (HyperX Cloud II Wireless)` for `Console` and `Multimedia` roles.
+  * Confirmed via `GetPersistedDefaultAudioEndpoint` readback, session probe on `HyperX`, and audible playback switch in the headset for 5 seconds, then restored via `ClearAllPersistedApplicationDefaultEndpoints`.
+* **Key Learnings:**
+  * **Exact Vtable Layout:** `ab3d4648-e242-459f-b02f-541c70306324` has `3 IUnknown + 3 IInspectable + 19 internal slots` (putting `SetPersistedDefaultAudioEndpoint` at slot 25, `GetPersistedDefaultAudioEndpoint` at slot 26, and `ClearAllPersistedApplicationDefaultEndpoints` at slot 27).
+  * **SWD Device Path Format:** `SetPersistedDefaultAudioEndpoint` requires the full SWD device interface path (`\\?\SWD#MMDEVAPI#<endpoint_id>#{e6327cad-dcec-4949-ae8a-991e976a79d2}` for `eRender`), not the bare `{0.0.0...}` endpoint ID.
+* **Refactor (Red → Green → Refactor):**
+  * Moved `IAudioPolicyConfigFactoryV2` / `V1` into `mod raw` in `crates/audio-core/src/policy.rs` and exposed `AppPolicyClient` (`set_app_endpoint`, `get_app_endpoint`, `clear_all_app_endpoints`).
+  * Removed direct `windows` / `windows-core` dependencies from `crates/steel-thread/Cargo.toml`.
+
 ---
 
 ## Upcoming Validation Plan
-
-### Step 4: Per-App Output Device Routing (`IAudioPolicyConfigFactory`)
-* **Goal:** Validate moving a running application (e.g., `vivaldi.exe`) between `PC Primary` and `Speakers (HyperX Cloud II Wireless)` without restarting the app or using virtual audio cables.
-* **Test Plan:**
-  * Bind `IAudioPolicyConfigFactory` (WinRT/COM activation) and invoke `SetPersistedDefaultAudioEndpoint` for `vivaldi.exe`'s PID/app token.
-  * Verify audio shifts to the HyperX headset and back to `PC Primary`.
-  * Document any edge cases (e.g., Chromium audio service PID vs. root browser PID, or whether the app needs an active stream to reflect the move immediately).
-* **Risk Retired:** Core requirement for meeting-headset vs. out-of-meeting-headset routing. Also clarifies whether simultaneous multi-output duplication (e.g., Spotify to two devices at once) is feasible natively or requires a separate mechanism.
 
 ### Step 5: Reactive COM Event Listeners (`IMMNotificationClient` & `IAudioSessionNotification`)
 * **Goal:** Replace one-shot polling with zero-overhead event callbacks.

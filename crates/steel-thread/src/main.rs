@@ -2,7 +2,9 @@ use std::env;
 use std::thread;
 use std::time::Duration;
 
-use audio_core::{AudioEnumerator, AudioSession, ComGuard, DataFlow, DeviceRole, PolicyClient};
+use audio_core::{
+    AppPolicyClient, AudioEnumerator, AudioSession, ComGuard, DataFlow, DeviceRole, PolicyClient,
+};
 
 struct CliConfig {
     step: u8,
@@ -14,11 +16,11 @@ struct CliConfig {
 
 fn parse_args() -> CliConfig {
     let mut cfg = CliConfig {
-        step: 3,
-        device_match: "PC Primary".to_string(),
+        step: 4,
+        device_match: "HyperX".to_string(),
         app_match: "vivaldi.exe".to_string(),
         target_vol: 0.30,
-        hold_secs: 3,
+        hold_secs: 5,
     };
 
     let mut args = env::args().skip(1);
@@ -279,6 +281,79 @@ fn run_step3(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn run_step4(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Result<()> {
+    println!("=== Step 4: Per-App Output Device Routing (IAudioPolicyConfigFactory) ===");
+    println!(
+        "Target app: \"{}\" | Target output pattern: \"{}\" | Hold: {}s\n",
+        cfg.app_match, cfg.device_match, cfg.hold_secs
+    );
+
+    let app_policy = AppPolicyClient::new()?;
+    let render_eps = enumerator.list_active_endpoints(DataFlow::Render)?;
+    let needle = cfg.device_match.to_lowercase();
+    let Some(target_ep) = render_eps
+        .iter()
+        .find(|ep| ep.friendly_name.to_lowercase().contains(&needle))
+    else {
+        eprintln!(
+            "No active playback endpoint matched \"{}\".",
+            cfg.device_match
+        );
+        return Ok(());
+    };
+
+    let app_needle = cfg.app_match.to_lowercase();
+    let mut found_pids: Vec<(u32, String)> = Vec::new();
+    for ep in &render_eps {
+        for s in ep.sessions()? {
+            if s.exe_name.to_lowercase() == app_needle
+                && !found_pids.iter().any(|(p, _)| *p == s.pid)
+            {
+                found_pids.push((s.pid, ep.friendly_name.clone()));
+            }
+        }
+    }
+
+    if found_pids.is_empty() {
+        eprintln!(
+            "No active audio session found for \"{}\" on any playback endpoint.",
+            cfg.app_match
+        );
+        return Ok(());
+    }
+
+    let (pid, ep_name) = &found_pids[0];
+    let pid = *pid;
+    let orig_mm = app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("Found pid={pid} ({}) on \"{ep_name}\" (persisted=\"{orig_mm}\")", cfg.app_match);
+
+    println!(
+        "\nRouting pid={pid} ({}) to \"{}\"...",
+        cfg.app_match, target_ep.friendly_name
+    );
+    app_policy.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, &target_ep.id)?;
+    app_policy.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, &target_ep.id)?;
+
+    thread::sleep(Duration::from_millis(500));
+    let readback_mm =
+        app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [APPLY] persisted Multimedia endpoint = \"{readback_mm}\"");
+
+    println!(
+        "\nHolding for {} seconds (listen for audio on {})...",
+        cfg.hold_secs, target_ep.friendly_name
+    );
+    thread::sleep(Duration::from_secs(cfg.hold_secs));
+
+    println!("Restoring original persisted routing for pid={pid}...");
+    app_policy.clear_all_app_endpoints()?;
+    let restored_mm =
+        app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [UNDO]  persisted Multimedia endpoint = \"{restored_mm}\"");
+
+    Ok(())
+}
+
 fn run() -> audio_core::Result<()> {
     let cfg = parse_args();
     let _com = ComGuard::new()?;
@@ -288,8 +363,9 @@ fn run() -> audio_core::Result<()> {
         1 => run_step1(&enumerator, &cfg)?,
         2 => run_step2(&enumerator, &cfg)?,
         3 => run_step3(&enumerator, &cfg)?,
+        4 => run_step4(&enumerator, &cfg)?,
         other => {
-            eprintln!("Unknown --step {other}. Supported: 1, 2, 3");
+            eprintln!("Unknown --step {other}. Supported: 1, 2, 3, 4");
             std::process::exit(2);
         }
     }
