@@ -94,15 +94,19 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
   * `SessionNotificationGuard` must retain the `IAudioSessionManager2` interface and call `GetSessionEnumerator()` once after `RegisterSessionNotification` so WASAPI arms `OnSessionCreated` callbacks.
   * `windows` crate `"implement"` feature is required for `*_Impl` COM server traits.
 
+### Step 6: Multi-Endpoint Preset Engine & Persistence
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [preset.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/preset.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/steel-thread/src/main.rs)
+* **What Was Tested:**
+  * Serialized and deserialized `PresetConfig` JSON via `serde` + `serde_json` (`save_to_file` / `load_from_file`).
+  * Applied a multi-endpoint preset (`PC Primary` Render `vol=0.85` + `Microphone (HyperX Cloud II Wireless)` Capture `vol=0.90` + `vivaldi.exe` app rule) via `PresetEngine::apply_preset`.
+  * Verified state readback (leaving unlisted `Speakers (HyperX Cloud II Wireless)` untouched at `0.94`), held 3 seconds, and restored original levels via `PresetSnapshot::restore`.
+* **Key Learnings:**
+  * `PresetEngine::handle_session_created` shares `resolve_rule_for_app` with `apply_preset`, keeping initial and reactive enforcement identical.
+
 ---
 
 ## Upcoming Validation Plan
-
-### Step 6: Multi-Endpoint Preset Engine & Persistence
-* **Goal:** Extract validated COM primitives into a reusable `crates/audio-core` library and implement the multi-endpoint preset state machine.
-* **Test Plan:**
-  * Define JSON preset schema supporting multiple render/capture endpoints, per-app volumes, default roles, and per-app output routing overrides.
-  * Validate apply/switch/restore determinism and conflict rules (manual slider overrides do not mutate saved presets).
 
 ### Step 7: Background Daemon, Named Pipe IPC & Tauri Tray UI
 * **Goal:** Decouple the headless engine from the visual controller.

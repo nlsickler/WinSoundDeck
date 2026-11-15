@@ -1,5 +1,6 @@
 use std::sync::mpsc::Sender;
 
+use serde::{Deserialize, Serialize};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
     eCapture, eRender, EDataFlow, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
@@ -10,7 +11,7 @@ use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, S
 use crate::{AudioEndpoint, AudioEvent, DeviceNotificationGuard, DeviceRole, Result};
 
 /// Direction of an audio endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataFlow {
     Render,
     Capture,

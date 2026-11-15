@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use windows::core::{GUID, HSTRING, PCWSTR};
 use windows::Win32::Media::Audio::{eCommunications, eConsole, eMultimedia, ERole};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
@@ -6,7 +7,7 @@ use windows::Win32::System::WinRT::RoGetActivationFactory;
 use crate::{DataFlow, Result};
 
 /// Windows Core Audio device role for default endpoint assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceRole {
     Console,
     Multimedia,

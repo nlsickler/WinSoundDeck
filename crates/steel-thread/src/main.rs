@@ -4,8 +4,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use audio_core::{
-    AppPolicyClient, AudioEnumerator, AudioEvent, AudioSession, ComGuard, DataFlow, DeviceRole,
-    PolicyClient,
+    AppPolicyClient, AppVolumeRule, AudioEnumerator, AudioEvent, AudioSession, ComGuard, DataFlow,
+    DeviceRole, EndpointTarget, PolicyClient, Preset, PresetConfig, PresetEngine,
 };
 
 struct CliConfig {
@@ -18,11 +18,11 @@ struct CliConfig {
 
 fn parse_args() -> CliConfig {
     let mut cfg = CliConfig {
-        step: 5,
+        step: 6,
         device_match: "HyperX".to_string(),
         app_match: "vivaldi.exe".to_string(),
         target_vol: 0.30,
-        hold_secs: 8,
+        hold_secs: 3,
     };
 
     let mut args = env::args().skip(1);
@@ -437,6 +437,85 @@ fn run_step5(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn run_step6(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Result<()> {
+    println!("=== Step 6: Multi-Endpoint Preset Engine & JSON Persistence ===");
+
+    let sample_config = PresetConfig {
+        version: "1.0.0".to_string(),
+        active_preset_id: Some("preset_focus_01".to_string()),
+        presets: vec![Preset {
+            id: "preset_focus_01".to_string(),
+            name: "Focus & Calls".to_string(),
+            endpoints: vec![
+                EndpointTarget {
+                    flow: DataFlow::Render,
+                    endpoint_id: None,
+                    friendly_name_pattern: Some("PC Primary".to_string()),
+                    default_roles: vec![DeviceRole::Console, DeviceRole::Multimedia],
+                    master_volume: Some(0.85),
+                    master_mute: Some(false),
+                    default_fallback_volume: None,
+                    app_rules: vec![AppVolumeRule {
+                        executable_name: cfg.app_match.clone(),
+                        target_volume_scalar: cfg.target_vol,
+                        is_muted: false,
+                    }],
+                },
+                EndpointTarget {
+                    flow: DataFlow::Capture,
+                    endpoint_id: None,
+                    friendly_name_pattern: Some("HyperX".to_string()),
+                    default_roles: vec![],
+                    master_volume: Some(0.90),
+                    master_mute: Some(false),
+                    default_fallback_volume: None,
+                    app_rules: vec![],
+                },
+            ],
+            app_routes: vec![],
+        }],
+    };
+
+    let tmp_path = std::env::temp_dir().join("audio_mixer_step6_preset.json");
+    sample_config
+        .save_to_file(&tmp_path)
+        .expect("failed to save preset JSON");
+    let loaded = PresetConfig::load_from_file(&tmp_path).expect("failed to load preset JSON");
+    let _ = std::fs::remove_file(&tmp_path);
+
+    let preset = &loaded.presets[0];
+    println!(
+        "Loaded preset \"{}\" ({}) with {} endpoint targets.",
+        preset.name,
+        preset.id,
+        preset.endpoints.len()
+    );
+
+    let engine = PresetEngine::new(enumerator);
+    let snapshot = engine.apply_preset(preset)?;
+    println!("  [APPLY] Preset applied cleanly.");
+
+    for flow in [DataFlow::Render, DataFlow::Capture] {
+        for ep in enumerator.list_active_endpoints(flow)? {
+            let state = ep.master_volume()?;
+            if ep.friendly_name.contains("PC Primary") || ep.friendly_name.contains("HyperX") {
+                println!(
+                    "  [STATE] {flow:?} {:<42} vol={:.2} muted={}",
+                    ep.friendly_name, state.volume, state.muted
+                );
+            }
+        }
+    }
+
+    println!("\nHolding for {} seconds before restoring snapshot...", cfg.hold_secs);
+    thread::sleep(Duration::from_secs(cfg.hold_secs));
+
+    snapshot.restore(enumerator)?;
+    println!("  [UNDO]  Snapshot restored cleanly.");
+
+    Ok(())
+}
+
 fn run() -> audio_core::Result<()> {
     let cfg = parse_args();
     let _com = ComGuard::new()?;
@@ -448,8 +527,9 @@ fn run() -> audio_core::Result<()> {
         3 => run_step3(&enumerator, &cfg)?,
         4 => run_step4(&enumerator, &cfg)?,
         5 => run_step5(&enumerator, &cfg)?,
+        6 => run_step6(&enumerator, &cfg)?,
         other => {
-            eprintln!("Unknown --step {other}. Supported: 1, 2, 3, 4, 5");
+            eprintln!("Unknown --step {other}. Supported: 1..6");
             std::process::exit(2);
         }
     }
