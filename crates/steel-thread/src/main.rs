@@ -1,9 +1,11 @@
 use std::env;
+use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use audio_core::{
-    AppPolicyClient, AudioEnumerator, AudioSession, ComGuard, DataFlow, DeviceRole, PolicyClient,
+    AppPolicyClient, AudioEnumerator, AudioEvent, AudioSession, ComGuard, DataFlow, DeviceRole,
+    PolicyClient,
 };
 
 struct CliConfig {
@@ -16,11 +18,11 @@ struct CliConfig {
 
 fn parse_args() -> CliConfig {
     let mut cfg = CliConfig {
-        step: 4,
+        step: 5,
         device_match: "HyperX".to_string(),
         app_match: "vivaldi.exe".to_string(),
         target_vol: 0.30,
-        hold_secs: 5,
+        hold_secs: 8,
     };
 
     let mut args = env::args().skip(1);
@@ -354,6 +356,87 @@ fn run_step4(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn run_step5(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Result<()> {
+    println!("=== Step 5: Reactive COM Event Listeners (Device + Session) ===");
+    println!("Listening for {} seconds...\n", cfg.hold_secs);
+
+    let (tx, rx) = mpsc::channel();
+    let _dev_guard = enumerator.watch_devices(tx.clone())?;
+
+    let render_eps = enumerator.list_active_endpoints(DataFlow::Render)?;
+    let mut session_guards = Vec::new();
+    for ep in &render_eps {
+        if let Ok(guard) = ep.watch_sessions(tx.clone()) {
+            session_guards.push(guard);
+        }
+    }
+    println!(
+        "Registered IMMNotificationClient + IAudioSessionNotification on {} render endpoints.",
+        session_guards.len()
+    );
+
+    // Automated probe: toggle Communications default endpoint briefly to verify DefaultDeviceChanged fires.
+    let orig_comm_id = enumerator.default_endpoint_id(DataFlow::Render, DeviceRole::Communications)?;
+    let target_ep_id = render_eps
+        .iter()
+        .find(|ep| ep.friendly_name.to_lowercase().contains(&cfg.device_match.to_lowercase()))
+        .map(|ep| ep.id.clone());
+
+    if let Some(target_id) = target_ep_id {
+        if target_id != orig_comm_id {
+            thread::spawn(move || {
+                let Ok(_com) = ComGuard::new() else { return };
+                let Ok(policy) = PolicyClient::new() else { return };
+                thread::sleep(Duration::from_secs(1));
+                let _ = policy.set_default_endpoint(&target_id, DeviceRole::Communications);
+                thread::sleep(Duration::from_secs(1));
+                let _ = policy.set_default_endpoint(&orig_comm_id, DeviceRole::Communications);
+            });
+        }
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(cfg.hold_secs);
+    while Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(ev) => match ev {
+                AudioEvent::DefaultDeviceChanged {
+                    flow,
+                    role,
+                    device_id,
+                } => {
+                    println!("  [EVENT] DefaultDeviceChanged: {flow:?} {role:?} -> {device_id}");
+                }
+                AudioEvent::DeviceStateChanged {
+                    device_id,
+                    new_state,
+                } => {
+                    println!("  [EVENT] DeviceStateChanged: {device_id} state={new_state:#x}");
+                }
+                AudioEvent::DeviceAdded { device_id } => {
+                    println!("  [EVENT] DeviceAdded: {device_id}");
+                }
+                AudioEvent::DeviceRemoved { device_id } => {
+                    println!("  [EVENT] DeviceRemoved: {device_id}");
+                }
+                AudioEvent::SessionCreated {
+                    endpoint_id,
+                    pid,
+                    exe_name,
+                    root_exe_name,
+                } => {
+                    println!(
+                        "  [EVENT] SessionCreated: pid={pid} exe={exe_name} root={root_exe_name} on {endpoint_id}"
+                    );
+                }
+            },
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    Ok(())
+}
+
 fn run() -> audio_core::Result<()> {
     let cfg = parse_args();
     let _com = ComGuard::new()?;
@@ -364,8 +447,9 @@ fn run() -> audio_core::Result<()> {
         2 => run_step2(&enumerator, &cfg)?,
         3 => run_step3(&enumerator, &cfg)?,
         4 => run_step4(&enumerator, &cfg)?,
+        5 => run_step5(&enumerator, &cfg)?,
         other => {
-            eprintln!("Unknown --step {other}. Supported: 1, 2, 3, 4");
+            eprintln!("Unknown --step {other}. Supported: 1, 2, 3, 4, 5");
             std::process::exit(2);
         }
     }

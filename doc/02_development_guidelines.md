@@ -19,7 +19,8 @@ This document defines the coding standards and architectural rules for the **Aud
 * **Isolate Undocumented APIs:** Undocumented Windows interfaces (`IPolicyConfig`, `IAudioPolicyConfigFactory`) must be isolated in dedicated modules with clear trait/struct wrappers so Windows build quirks are contained in one place.
 * **Verify Reference Signatures Before Coding:** When implementing any undocumented COM/WinRT interface, verify the exact IID, base interface (`IUnknown` vs. `IInspectable`), slot count, and parameter ABI types (`HSTRING` vs. `PCWSTR`, SWD path vs. endpoint ID) against a canonical reference implementation (e.g., EarTrumpet) before writing vtable stubs.
 
-## 4. Live Hardware Testing Hygiene
+## 4. Live Hardware Testing & Experimentation Hygiene
+* **Planned & Communicated Experiments:** Plan each experiment upfront and communicate what will be tested, what changes are being made, and any hypotheses before iterating. When tackling undocumented Windows behaviors, research canonical open-source references (such as MIT-licensed EarTrumpet, respecting any file/component license exclusions) before prototyping.
 * **Apply & Undo:** Experimental steps should record initial state, apply the change, verify via readback, and restore the original state before exiting.
 * **Conflict Avoidance:** Confirm SteelSeries Sonar (or other external audio mixers) is shut down before running live hardware tests.
 * **Sandbox Boundary:** Enumeration works in the restricted terminal sandbox, but `IMMDevice::Activate` (`IAudioSessionManager2`, `IAudioEndpointVolume`) requires unsandboxed host execution (`0x80070005` otherwise).

@@ -1,3 +1,5 @@
+use std::sync::mpsc::Sender;
+
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
     eCapture, eRender, EDataFlow, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
@@ -5,7 +7,7 @@ use windows::Win32::Media::Audio::{
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
-use crate::{AudioEndpoint, DeviceRole, Result};
+use crate::{AudioEndpoint, AudioEvent, DeviceNotificationGuard, DeviceRole, Result};
 
 /// Direction of an audio endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +73,11 @@ impl AudioEnumerator {
     pub fn default_endpoint_id(&self, flow: DataFlow, role: DeviceRole) -> Result<String> {
         let device = unsafe { self.inner.GetDefaultAudioEndpoint(flow.into(), role.into())? };
         read_device_id(&device)
+    }
+
+    /// Registers an `IMMNotificationClient` that forwards device events to `tx`.
+    pub fn watch_devices(&self, tx: Sender<AudioEvent>) -> Result<DeviceNotificationGuard> {
+        DeviceNotificationGuard::register(self.inner.clone(), tx)
     }
 }
 

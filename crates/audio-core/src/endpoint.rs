@@ -1,3 +1,5 @@
+use std::sync::mpsc::Sender;
+
 use windows::core::{Interface, GUID};
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
@@ -6,7 +8,7 @@ use windows::Win32::Media::Audio::{
 use windows::Win32::System::Com::CLSCTX_ALL;
 
 use crate::session::resolve_process_exe_name;
-use crate::{AudioSession, DataFlow, Result};
+use crate::{AudioEvent, AudioSession, DataFlow, Result, SessionNotificationGuard};
 
 /// Master volume and mute state of a hardware audio endpoint.
 #[derive(Debug, Clone, Copy)]
@@ -74,5 +76,11 @@ impl AudioEndpoint {
             sessions.push(AudioSession::new(pid, exe_name, volume_ctl));
         }
         Ok(sessions)
+    }
+
+    /// Registers an `IAudioSessionNotification` on this endpoint that forwards new sessions to `tx`.
+    pub fn watch_sessions(&self, tx: Sender<AudioEvent>) -> Result<SessionNotificationGuard> {
+        let session_mgr: IAudioSessionManager2 = unsafe { self.device.Activate(CLSCTX_ALL, None)? };
+        SessionNotificationGuard::register(self.id.clone(), session_mgr, tx)
     }
 }

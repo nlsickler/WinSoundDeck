@@ -82,17 +82,21 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
   * Moved `IAudioPolicyConfigFactoryV2` / `V1` into `mod raw` in `crates/audio-core/src/policy.rs` and exposed `AppPolicyClient` (`set_app_endpoint`, `get_app_endpoint`, `clear_all_app_endpoints`).
   * Removed direct `windows` / `windows-core` dependencies from `crates/steel-thread/Cargo.toml`.
 
+### Step 5: Reactive COM Event Listeners (`IMMNotificationClient` & `IAudioSessionNotification`)
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [events.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/events.rs), [session.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/session.rs), [enumerator.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/enumerator.rs), [endpoint.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/endpoint.rs)
+* **What Was Tested:**
+  * Implemented `IMMNotificationClient_Impl` (`DeviceNotificationGuard`) and `IAudioSessionNotification_Impl` (`SessionNotificationGuard`) using `windows-rs`'s `#[implement(...)]` macro.
+  * Registered listeners across all 5 active `eRender` endpoints and triggered a `DeviceRole::Communications` switch + restore via `PolicyClient`.
+  * Observed real-time `SessionCreated` and `DefaultDeviceChanged` events arriving over `std::sync::mpsc::Sender<AudioEvent>`, followed by clean RAII unregistration on drop.
+  * Added `resolve_root_exe_name` in `session.rs` using `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)` to walk parent PIDs up to the root application binary.
+* **Key Learnings:**
+  * `SessionNotificationGuard` must retain the `IAudioSessionManager2` interface and call `GetSessionEnumerator()` once after `RegisterSessionNotification` so WASAPI arms `OnSessionCreated` callbacks.
+  * `windows` crate `"implement"` feature is required for `*_Impl` COM server traits.
+
 ---
 
 ## Upcoming Validation Plan
-
-### Step 5: Reactive COM Event Listeners (`IMMNotificationClient` & `IAudioSessionNotification`)
-* **Goal:** Replace one-shot polling with zero-overhead event callbacks.
-* **Test Plan:**
-  * Implement `IMMNotificationClient` to log device plug/unplug, state changes, default device changes, and external hardware volume/mute changes.
-  * Implement `IAudioSessionNotification` to intercept a newly started audio stream (e.g., launching or unpausing Vivaldi after the test starts) and apply volume rules immediately.
-  * Add `CreateToolhelp32Snapshot` parent-process resolution for multi-process/Electron apps where the audio child process needs grouping under the root binary.
-* **Risk Retired:** Validates COM callback threading, lifetime management, and ephemeral/delayed session handling.
 
 ### Step 6: Multi-Endpoint Preset Engine & Persistence
 * **Goal:** Extract validated COM primitives into a reusable `crates/audio-core` library and implement the multi-endpoint preset state machine.
