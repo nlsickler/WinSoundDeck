@@ -26,6 +26,8 @@ pub struct AppPersistentSettings {
     pub muted: Option<bool>,
     #[serde(default)]
     pub secondary_outputs: Vec<SecondaryOutputSetting>,
+    #[serde(default)]
+    pub output_volumes: HashMap<String, f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

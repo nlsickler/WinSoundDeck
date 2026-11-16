@@ -145,6 +145,7 @@ fn collect_status(
                                     is_active: s.is_active,
                                     volume: vol,
                                     muted,
+                                    saved_volumes: HashMap::new(),
                                 },
                             ),
                         );
@@ -181,7 +182,7 @@ fn handle_request(
             (IpcResponse::Ok, true)
         }
         IpcRequest::GetStatus => {
-            let (active_id, loopbacks) = state
+            let (active_id, loopbacks, app_settings_snapshot) = state
                 .lock()
                 .map(|g| {
                     let lbs = g
@@ -194,11 +195,22 @@ fn handle_request(
                             muted: lb.muted,
                         })
                         .collect();
-                    (g.config.active_preset_id.clone(), lbs)
+                    (
+                        g.config.active_preset_id.clone(),
+                        lbs,
+                        g.app_settings.clone(),
+                    )
                 })
-                .unwrap_or((None, Vec::new()));
+                .unwrap_or((None, Vec::new(), AppSettingsStore::default()));
             match collect_status(enumerator, active_id) {
                 Ok(mut status) => {
+                    for s in &mut status.sessions {
+                        if let Some(key) = AppSettingsStore::key_for_pid(s.pid) {
+                            if let Some(cfg) = app_settings_snapshot.apps.get(&key) {
+                                s.saved_volumes = cfg.output_volumes.clone();
+                            }
+                        }
+                    }
                     status.loopbacks = loopbacks;
                     (IpcResponse::Status(status), false)
                 }
@@ -432,11 +444,24 @@ fn handle_request(
                 .list_active_endpoints(DataFlow::Render)
                 .map_err(|e| e.to_string())
                 .and_then(|eps| {
+                    let mut primary_vol = 1.0f32;
+                    for ep in &eps {
+                        if let Ok(sessions) = ep.sessions() {
+                            if let Some(s) = sessions.into_iter().find(|s| s.pid == pid) {
+                                primary_vol = s.volume().unwrap_or(1.0);
+                                break;
+                            }
+                        }
+                    }
                     let ep = eps
                         .into_iter()
                         .find(|e| e.id == target_endpoint_id)
                         .ok_or_else(|| format!("Endpoint '{target_endpoint_id}' not found"))?;
-                    LoopbackTee::start(pid, &ep, vol).map_err(|e| e.to_string())
+                    let handle = LoopbackTee::start(pid, &ep, vol).map_err(|e| e.to_string())?;
+                    let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
+                    handle.set_linear_gain(ratio.powi(2));
+                    handle.set_mute(vol <= 0.0);
+                    Ok(handle)
                 });
             match res {
                 Ok(handle) => {
@@ -446,23 +471,24 @@ fn handle_request(
                             ActiveLoopback {
                                 handle,
                                 volume: vol,
-                                muted: false,
+                                muted: vol <= 0.0,
                             },
                         );
                         let path = guard.app_settings_path.clone();
                         guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                            s.output_volumes.insert(target_endpoint_id.clone(), vol);
                             if let Some(existing) = s
                                 .secondary_outputs
                                 .iter_mut()
                                 .find(|o| o.endpoint_id == target_endpoint_id)
                             {
                                 existing.volume = vol;
-                                existing.muted = false;
+                                existing.muted = vol <= 0.0;
                             } else {
                                 s.secondary_outputs.push(SecondaryOutputSetting {
                                     endpoint_id: target_endpoint_id,
                                     volume: vol,
-                                    muted: false,
+                                    muted: vol <= 0.0,
                                 });
                             }
                         });
@@ -601,8 +627,9 @@ fn handle_set_app_output_volume(
         .map(|((_, ep_id), lb)| (ep_id.clone(), lb.volume))
         .collect();
 
-    // On finalize (pointerup), promote the loudest enabled output to Primary if strictly louder.
-    if finalize && !secondary_vols.is_empty() {
+    // Only promote a secondary output to Primary on finalize when Primary reaches 0%
+    // (otherwise f32 LoopbackTee amplifies cleanly via (secondary / primary)^2 without stream glitches).
+    if finalize && primary_vol <= 0.0 && !secondary_vols.is_empty() {
         let mut best_id = cur_primary.clone();
         let mut best_vol = primary_vol;
         for (ep_id, v) in &secondary_vols {
@@ -691,10 +718,12 @@ fn handle_set_app_output_volume(
         })
         .collect();
     let path = guard.app_settings_path.clone();
+    let ep_key = endpoint_id.to_string();
     guard.app_settings.upsert_for_pid(pid, &path, |s| {
         s.primary_endpoint_id = Some(cur_primary);
         s.volume = Some(primary_vol);
         s.muted = Some(primary_vol <= 0.0);
+        s.output_volumes.insert(ep_key, vol);
         s.secondary_outputs = updated_secs;
     });
 

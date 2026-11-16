@@ -3,6 +3,7 @@ const { invoke } = window.__TAURI__.core;
 let isDraggingSlider = false;
 let activeTab = "apps";
 const expandedAppPids = new Set();
+const rememberedOutputVolumes = new Map();
 let showInactiveApps = false;
 
 function pct(vol) {
@@ -352,6 +353,10 @@ function buildRoutingOutputRow() {
         }
       }
     } else if (cb.checked && !isLoopback) {
+      const remembered =
+        (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
+        rememberedOutputVolumes.get(`${session.pid}:${endpoint.id}`) ??
+        0.5;
       if (session.muted && activeLoopbacks.length === 0) {
         await invoke("route_app", {
           pid: session.pid,
@@ -368,7 +373,7 @@ function buildRoutingOutputRow() {
         await invoke("start_loopback", {
           pid: session.pid,
           targetEndpointId: endpoint.id,
-          volume: 0.5,
+          volume: remembered,
         });
       }
     } else if (!cb.checked && isLoopback) {
@@ -387,6 +392,7 @@ function buildRoutingOutputRow() {
     if (!ctx) return;
     const { session, endpoint } = ctx;
     const v = Number(e.target.value) / 100;
+    rememberedOutputVolumes.set(`${session.pid}:${endpoint.id}`, v);
     label.textContent = `${e.target.value}%`;
     await invoke("set_app_output_volume", {
       pid: session.pid,
@@ -395,12 +401,13 @@ function buildRoutingOutputRow() {
       finalize: false,
     });
   };
-  slider.onpointerup = async (e) => {
+  slider.onchange = async (e) => {
     isDraggingSlider = false;
     const ctx = row._ctx;
     if (!ctx) return;
     const { session, endpoint } = ctx;
     const v = Number(e.target.value) / 100;
+    rememberedOutputVolumes.set(`${session.pid}:${endpoint.id}`, v);
     await invoke("set_app_output_volume", {
       pid: session.pid,
       endpointId: endpoint.id,
@@ -477,7 +484,12 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
           const label = row.querySelector(".vol-label");
           slider.disabled = !enabled;
 
-          const vol = isPrimary ? s.volume : isLoopback ? lb.volume : 0.5;
+          const savedVol =
+            (s.saved_volumes && s.saved_volumes[ep.id]) ??
+            rememberedOutputVolumes.get(`${s.pid}:${ep.id}`) ??
+            0.5;
+          const vol = isPrimary ? s.volume : isLoopback ? lb.volume : savedVol;
+          rememberedOutputVolumes.set(`${s.pid}:${ep.id}`, vol);
           const pctVal = pct(vol);
           if (!isDraggingSlider && Number(slider.value) !== pctVal) {
             slider.value = String(pctVal);

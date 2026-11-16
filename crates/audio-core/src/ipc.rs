@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::os::windows::io::{FromRawHandle, RawHandle};
@@ -107,6 +108,8 @@ pub struct SessionStatus {
     pub is_active: bool,
     pub volume: f32,
     pub muted: bool,
+    #[serde(default)]
+    pub saved_volumes: HashMap<String, f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
