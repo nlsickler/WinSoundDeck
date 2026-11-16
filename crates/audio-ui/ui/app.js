@@ -394,28 +394,56 @@ function buildRoutingOutputRow() {
     if (!ctx) return;
     const { session, endpoint, isPrimary, isLoopback, activeLoopbacks } = ctx;
     if (isPrimary) {
-      // Unchecking primary promotes the first active secondary loopback to primary.
-      const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
-      if (!fallback) {
-        cb.checked = true;
-        return;
+      if (cb.checked) {
+        await invoke("set_session_mute", {
+          endpointId: session.endpoint_id,
+          pid: session.pid,
+          muted: false,
+        });
+      } else {
+        // Unchecking primary promotes the first active secondary loopback to primary,
+        // or mutes the session if no secondary outputs are active.
+        const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
+        if (fallback) {
+          await invoke("route_app", {
+            pid: session.pid,
+            flow: "Render",
+            endpointId: fallback.target_endpoint_id,
+          });
+          await new Promise((r) => setTimeout(r, 250));
+          await invoke("stop_loopback", {
+            pid: session.pid,
+            targetEndpointId: fallback.target_endpoint_id,
+          });
+        } else {
+          await invoke("set_session_mute", {
+            endpointId: session.endpoint_id,
+            pid: session.pid,
+            muted: true,
+          });
+        }
       }
-      await invoke("route_app", {
-        pid: session.pid,
-        flow: "Render",
-        endpointId: fallback.target_endpoint_id,
-      });
-      await new Promise((r) => setTimeout(r, 250));
-      await invoke("stop_loopback", {
-        pid: session.pid,
-        targetEndpointId: fallback.target_endpoint_id,
-      });
     } else if (cb.checked && !isLoopback) {
-      await invoke("start_loopback", {
-        pid: session.pid,
-        targetEndpointId: endpoint.id,
-        volume: 0.5,
-      });
+      if (session.muted && activeLoopbacks.length === 0) {
+        // All outputs were unchecked (muted); checking a new output switches primary to it and unmutes.
+        await invoke("route_app", {
+          pid: session.pid,
+          flow: "Render",
+          endpointId: endpoint.id,
+        });
+        await new Promise((r) => setTimeout(r, 250));
+        await invoke("set_session_mute", {
+          endpointId: endpoint.id,
+          pid: session.pid,
+          muted: false,
+        });
+      } else {
+        await invoke("start_loopback", {
+          pid: session.pid,
+          targetEndpointId: endpoint.id,
+          volume: 0.5,
+        });
+      }
     } else if (!cb.checked && isLoopback) {
       await invoke("stop_loopback", {
         pid: session.pid,
@@ -468,9 +496,14 @@ function renderRoutingTab(sessions, endpoints, loopbacks) {
       card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
 
       const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
-      const activeCount = 1 + activeLoopbacks.length;
+      const primaryActive = !s.muted;
+      const activeCount = (primaryActive ? 1 : 0) + activeLoopbacks.length;
       card.querySelector(".badge-muted").textContent =
-        activeCount === 1 ? "1 output" : `${activeCount} outputs`;
+        activeCount === 0
+          ? "Muted"
+          : activeCount === 1
+            ? "1 output"
+            : `${activeCount} outputs`;
 
       const expanded = expandedRoutingPids.has(s.pid);
       card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
@@ -487,17 +520,15 @@ function renderRoutingTab(sessions, endpoints, loopbacks) {
           const isPrimary = ep.id === s.endpoint_id;
           const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
           const isLoopback = Boolean(lb);
-          const enabled = isPrimary || isLoopback;
+          const enabled = (isPrimary && !s.muted) || isLoopback;
 
           row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
           row.classList.toggle("disabled", !enabled);
 
           const cb = row.querySelector('input[type="checkbox"]');
           cb.checked = enabled;
-          cb.disabled = isPrimary && activeLoopbacks.length === 0;
-          cb.title = cb.disabled
-            ? "Check another output first to switch primary"
-            : "";
+          cb.disabled = false;
+          cb.title = "";
 
           const nameEl = row.querySelector(".routing-output-name");
           nameEl.textContent = ep.friendly_name;
