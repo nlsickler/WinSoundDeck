@@ -480,6 +480,7 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
     (card, s) => {
       card._item = s;
       card.classList.toggle("inactive-card", !s.is_active);
+      card.classList.toggle("app-muted", Boolean(s.muted));
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;
@@ -493,12 +494,11 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
 
       const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
       const activeCount = (!s.muted ? 1 : 0) + activeLoopbacks.length;
-      card.querySelector(".badge-muted").textContent =
-        activeCount === 0
-          ? "Muted"
-          : activeCount === 1
-            ? "1 out"
-            : `${activeCount} outs`;
+      card.querySelector(".badge-muted").textContent = s.muted
+        ? "Muted"
+        : activeCount === 1
+          ? "1 out"
+          : `${activeCount} outs`;
 
       const expanded = s.is_active
         ? !collapsedActivePids.has(s.pid)
@@ -524,7 +524,7 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
           const isPrimary = ep.id === s.endpoint_id;
           const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
           const isLoopback = Boolean(lb);
-          const enabled = (isPrimary && !s.muted) || isLoopback;
+          const enabled = (isPrimary && (!s.muted || activeLoopbacks.length > 0)) || isLoopback;
 
           row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
           row.classList.toggle("disabled", !enabled);

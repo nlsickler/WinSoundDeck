@@ -400,9 +400,19 @@ fn handle_request(
             match res {
                 Ok(()) => {
                     if let Ok(mut guard) = state.lock() {
+                        for ((p, _), lb) in guard.loopbacks.iter_mut() {
+                            if *p == pid {
+                                let lb_muted = if muted { true } else { lb.volume <= 0.0 };
+                                lb.muted = lb_muted;
+                                lb.handle.set_mute(lb_muted);
+                            }
+                        }
                         let path = guard.app_settings_path.clone();
                         guard.app_settings.upsert_for_pid(pid, &path, |s| {
                             s.muted = Some(muted);
+                            for sec in &mut s.secondary_outputs {
+                                sec.muted = if muted { true } else { sec.volume <= 0.0 };
+                            }
                         });
                     }
                     (IpcResponse::Ok, false)
