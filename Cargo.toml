@@ -2,5 +2,6 @@
 resolver = "2"
 members = [
     "crates/audio-core",
+    "crates/audio-daemon",
     "crates/steel-thread",
 ]

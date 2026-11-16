@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use audio_core::ipc::{send_ipc_request, IpcRequest, IpcResponse, DEFAULT_PIPE_NAME};
 use audio_core::{
     resolve_root_exe_name, AppPolicyClient, AppVolumeRule, AudioEnumerator, AudioEvent,
     AudioSession, ComGuard, DataFlow, DeviceRole, EndpointTarget, LoopbackTee, PolicyClient,
@@ -19,7 +20,7 @@ struct CliConfig {
 
 fn parse_args() -> CliConfig {
     let mut cfg = CliConfig {
-        step: 8,
+        step: 9,
         device_match: "HyperX".to_string(),
         app_match: "vivaldi.exe".to_string(),
         target_vol: 0.30,
@@ -659,6 +660,60 @@ fn run_step8(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn run_step9() -> audio_core::Result<()> {
+    println!("=== Step 9: Background Daemon & Named Pipe IPC ===");
+
+    let exe_dir = std::env::current_exe()
+        .expect("current_exe")
+        .parent()
+        .expect("parent dir")
+        .to_path_buf();
+    let daemon_exe = exe_dir.join("audio-daemon.exe");
+    let tmp_cfg = std::env::temp_dir().join("audio_mixer_step9_empty.json");
+
+    let mut child = std::process::Command::new(&daemon_exe)
+        .args(["--config", tmp_cfg.to_string_lossy().as_ref()])
+        .spawn()
+        .expect("failed to spawn audio-daemon.exe");
+    println!("Spawned audio-daemon.exe (pid={})", child.id());
+
+    let mut pong_ok = false;
+    for _ in 0..20 {
+        if let Ok(IpcResponse::Pong) = send_ipc_request(DEFAULT_PIPE_NAME, &IpcRequest::Ping) {
+            pong_ok = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    assert!(pong_ok, "daemon did not respond to Ping");
+    println!("  [IPC] Ping -> Pong");
+
+    let status = send_ipc_request(DEFAULT_PIPE_NAME, &IpcRequest::GetStatus)
+        .expect("GetStatus failed");
+    if let IpcResponse::Status(s) = status {
+        println!(
+            "  [IPC] GetStatus -> {} endpoints, {} active sessions (active_preset={:?})",
+            s.endpoints.len(),
+            s.sessions.len(),
+            s.active_preset_id
+        );
+    }
+
+    let presets = send_ipc_request(DEFAULT_PIPE_NAME, &IpcRequest::ListPresets)
+        .expect("ListPresets failed");
+    if let IpcResponse::Presets { presets, .. } = presets {
+        println!("  [IPC] ListPresets -> {} presets", presets.len());
+    }
+
+    let shut = send_ipc_request(DEFAULT_PIPE_NAME, &IpcRequest::Shutdown)
+        .expect("Shutdown failed");
+    println!("  [IPC] Shutdown -> {shut:?}");
+    let exit_status = child.wait().expect("daemon wait");
+    println!("  [EXIT] audio-daemon exited with {exit_status}");
+
+    Ok(())
+}
+
 fn run() -> audio_core::Result<()> {
     let cfg = parse_args();
     let _com = ComGuard::new()?;
@@ -673,8 +728,9 @@ fn run() -> audio_core::Result<()> {
         6 => run_step6(&enumerator, &cfg)?,
         7 => run_step7(&enumerator, &cfg)?,
         8 => run_step8(&enumerator, &cfg)?,
+        9 => run_step9()?,
         other => {
-            eprintln!("Unknown --step {other}. Supported: 1..8");
+            eprintln!("Unknown --step {other}. Supported: 1..9");
             std::process::exit(2);
         }
     }

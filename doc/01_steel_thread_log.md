@@ -131,15 +131,21 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
   * Added `AppPolicyClient::reset_app_endpoint` and `AppPolicyClient::set_app_endpoint_swd` in `policy.rs`.
   * Updated `PresetSnapshot` in `preset.rs` to capture and restore each routed app's prior SWD path individually instead of calling `clear_all_app_endpoints()`.
 
+### Step 9: Background Daemon, Named Pipe IPC & Hot-Plug Re-Enforcement
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [ipc.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/ipc.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/audio-daemon/src/main.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/steel-thread/src/main.rs)
+* **What Was Tested:**
+  * Spawned `audio-daemon.exe` headless on `\\.\pipe\audio-mixer-daemon` with reactive `DeviceNotificationGuard` + `SessionNotificationGuard` hot-plug/session watcher threads.
+  * Exercised `IpcRequest::Ping -> Pong`, `GetStatus` (7 endpoints, 6 active sessions), `ListPresets` (0 presets), and `Shutdown -> Ok` with clean exit code `0`.
+  * Measured debug `audio-daemon.exe` working set at `12.39 MB` (<15 MB target).
+* **Key Learnings:**
+  * Single-instance `serve_named_pipe` creates a brief 0-instance gap between `drop(file)` and the next `CreateNamedPipeW`; `open_pipe_with_retry` in `send_ipc_request` retries briefly on `ErrorKind::NotFound` / `ERROR_PIPE_BUSY` (`231`) so back-to-back IPC calls never race.
+* **Refactor (Red → Green → Refactor):**
+  * Extracted `open_pipe_with_retry` in `crates/audio-core/src/ipc.rs` for resilient client-side pipe connection.
+
 ---
 
 ## Upcoming Validation Plan
-
-### Step 9: Background Daemon, Named Pipe IPC & Hot-Plug Re-Enforcement
-* **Goal:** Decouple the headless engine from the UI and enforce presets continuously.
-* **Test Plan:**
-  * Run the core engine as a lightweight background daemon (<15 MB RAM target) exposing control/status over Windows Named Pipes (`\\.\pipe\audio-mixer-daemon`).
-  * Wire `DeviceStateChanged` / `DeviceAdded` events to automatically re-apply active preset rules when a headset or DAC reconnects.
 
 ### Step 10: Tauri System Tray & Mixer UI
 * **Goal:** Build the lightweight system tray & active mixer UI client on top of the Named Pipe IPC protocol.

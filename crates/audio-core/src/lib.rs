@@ -2,6 +2,7 @@ mod com;
 mod endpoint;
 mod enumerator;
 mod events;
+pub mod ipc;
 mod loopback;
 mod policy;
 mod preset;
