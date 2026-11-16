@@ -34,7 +34,17 @@
 
   <main class="container">
     <section class="tab-panel active" id="tab-apps" role="tabpanel">
-      <div id="apps-list" class="card-list"></div>
+      <div class="io-group">
+        <h2>Active</h2>
+        <div id="apps-active-list" class="card-list"></div>
+      </div>
+      <div class="io-group" id="apps-inactive-group">
+        <h2 class="collapsible-heading" id="apps-inactive-toggle">
+          <span class="chevron" id="apps-inactive-chevron">▸</span>
+          Inactive <span id="apps-inactive-count" class="tab-count">0</span>
+        </h2>
+        <div id="apps-inactive-list" class="card-list collapsed"></div>
+      </div>
     </section>
 
     <section class="tab-panel" id="tab-io" role="tabpanel">
@@ -49,7 +59,17 @@
     </section>
 
     <section class="tab-panel" id="tab-routing" role="tabpanel">
-      <div id="routing-list" class="card-list"></div>
+      <div class="io-group">
+        <h2>Active</h2>
+        <div id="routing-active-list" class="card-list"></div>
+      </div>
+      <div class="io-group" id="routing-inactive-group">
+        <h2 class="collapsible-heading" id="routing-inactive-toggle">
+          <span class="chevron" id="routing-inactive-chevron">▸</span>
+          Inactive <span id="routing-inactive-count" class="tab-count">0</span>
+        </h2>
+        <div id="routing-inactive-list" class="card-list collapsed"></div>
+      </div>
     </section>
   </main>
 

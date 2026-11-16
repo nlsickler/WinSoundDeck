@@ -97,6 +97,8 @@ pub struct SessionStatus {
     pub root_exe_name: String,
     #[serde(default)]
     pub display_name: String,
+    #[serde(default)]
+    pub is_active: bool,
     pub volume: f32,
     pub muted: bool,
 }

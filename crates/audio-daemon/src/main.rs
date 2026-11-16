@@ -142,6 +142,7 @@ fn collect_status(
                                     exe_name: s.exe_name,
                                     root_exe_name,
                                     display_name,
+                                    is_active: s.is_active,
                                     volume: vol,
                                     muted,
                                 },

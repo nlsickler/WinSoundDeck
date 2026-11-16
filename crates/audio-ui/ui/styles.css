@@ -181,6 +181,21 @@ body {
   margin-bottom: 8px;
 }
 
+.collapsible-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.card-list.collapsed {
+  display: none;
+}
+
+.card.inactive-card {
+  opacity: 0.72;
+}
+
 .card-list {
   display: flex;
   flex-direction: column;

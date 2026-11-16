@@ -3,6 +3,8 @@ const { invoke } = window.__TAURI__.core;
 let isDraggingSlider = false;
 let activeTab = "apps";
 const expandedRoutingPids = new Set();
+let showInactiveApps = false;
+let showInactiveRouting = false;
 
 function pct(vol) {
   return Math.round(Math.max(0, Math.min(1, vol)) * 100);
@@ -290,16 +292,16 @@ function buildAppCard() {
   return card;
 }
 
-function renderAppsTab(sessions, endpoints) {
-  const epNames = new Map(endpoints.map((e) => [e.id, e.friendly_name]));
+function renderAppsList(container, sessions, epNames) {
   syncKeyedList(
-    document.getElementById("apps-list"),
+    container,
     sessions,
     (s) => `app:${s.pid}`,
-    "No active audio sessions.",
+    "No audio sessions.",
     buildAppCard,
     (card, s) => {
       card._item = s;
+      card.classList.toggle("inactive-card", !s.is_active);
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       card.querySelector(".card-title").textContent = name;
       card.querySelector(".badge-muted").textContent = epNames.get(s.endpoint_id) || "Unknown";
@@ -317,6 +319,18 @@ function renderAppsTab(sessions, endpoints) {
       card.querySelector(".vol-label").textContent = `${pctVal}%`;
     }
   );
+}
+
+function renderAppsTab(sessions, endpoints) {
+  const epNames = new Map(endpoints.map((e) => [e.id, e.friendly_name]));
+  const active = sessions.filter((s) => s.is_active);
+  const inactive = sessions.filter((s) => !s.is_active);
+
+  renderAppsList(document.getElementById("apps-active-list"), active, epNames);
+  document.getElementById("apps-inactive-count").textContent = String(inactive.length);
+  document.getElementById("apps-inactive-group").style.display =
+    inactive.length > 0 ? "" : "none";
+  renderAppsList(document.getElementById("apps-inactive-list"), inactive, epNames);
 }
 
 function buildRoutingCard() {
@@ -480,17 +494,16 @@ function buildRoutingOutputRow() {
   return row;
 }
 
-function renderRoutingTab(sessions, endpoints, loopbacks) {
-  const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
-
+function renderRoutingList(container, sessions, renderEndpoints, loopbacks) {
   syncKeyedList(
-    document.getElementById("routing-list"),
+    container,
     sessions,
     (s) => `route:${s.pid}`,
-    "No active audio sessions to route.",
+    "No audio sessions to route.",
     buildRoutingCard,
     (card, s) => {
       card._item = s;
+      card.classList.toggle("inactive-card", !s.is_active);
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       card.querySelector(".card-title").textContent = name;
       card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
@@ -552,6 +565,40 @@ function renderRoutingTab(sessions, endpoints, loopbacks) {
     }
   );
 }
+
+function renderRoutingTab(sessions, endpoints, loopbacks) {
+  const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
+  const active = sessions.filter((s) => s.is_active);
+  const inactive = sessions.filter((s) => !s.is_active);
+
+  renderRoutingList(
+    document.getElementById("routing-active-list"),
+    active,
+    renderEndpoints,
+    loopbacks
+  );
+  document.getElementById("routing-inactive-count").textContent = String(inactive.length);
+  document.getElementById("routing-inactive-group").style.display =
+    inactive.length > 0 ? "" : "none";
+  renderRoutingList(
+    document.getElementById("routing-inactive-list"),
+    inactive,
+    renderEndpoints,
+    loopbacks
+  );
+}
+
+document.getElementById("apps-inactive-toggle").onclick = () => {
+  showInactiveApps = !showInactiveApps;
+  document.getElementById("apps-inactive-chevron").textContent = showInactiveApps ? "▾" : "▸";
+  document.getElementById("apps-inactive-list").classList.toggle("collapsed", !showInactiveApps);
+};
+
+document.getElementById("routing-inactive-toggle").onclick = () => {
+  showInactiveRouting = !showInactiveRouting;
+  document.getElementById("routing-inactive-chevron").textContent = showInactiveRouting ? "▾" : "▸";
+  document.getElementById("routing-inactive-list").classList.toggle("collapsed", !showInactiveRouting);
+};
 
 setupTabs();
 document.getElementById("refresh-btn").onclick = () => refreshAll(true);
