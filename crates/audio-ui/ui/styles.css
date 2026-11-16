@@ -376,6 +376,12 @@ button:hover {
   flex-shrink: 0;
 }
 
+.primary-slot {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 .routing-output-row input[type="range"]:disabled {
   cursor: default;
 }

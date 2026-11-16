@@ -307,8 +307,9 @@ function buildRoutingOutputRow() {
   name.className = "routing-output-name";
 
   const primaryTag = document.createElement("span");
-  primaryTag.className = "badge-tag";
-  primaryTag.textContent = "Primary";
+  primaryTag.className = "badge-tag primary-slot";
+  primaryTag.textContent = "P";
+  primaryTag.title = "Primary Output";
 
   const slider = document.createElement("input");
   slider.type = "range";
@@ -496,8 +497,8 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
           nameEl.textContent = ep.friendly_name;
           nameEl.title = ep.friendly_name;
 
-          const primaryTag = row.querySelector(".badge-tag");
-          primaryTag.style.display = isPrimary ? "" : "none";
+          const primaryTag = row.querySelector(".primary-slot");
+          primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
 
           const slider = row.querySelector('input[type="range"]');
           const label = row.querySelector(".vol-label");
