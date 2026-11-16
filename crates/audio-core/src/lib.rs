@@ -2,6 +2,7 @@ mod com;
 mod endpoint;
 mod enumerator;
 mod events;
+mod loopback;
 mod policy;
 mod preset;
 mod session;
@@ -12,6 +13,7 @@ pub use com::ComGuard;
 pub use endpoint::{AudioEndpoint, EndpointVolumeState};
 pub use enumerator::{AudioEnumerator, DataFlow};
 pub use events::{AudioEvent, DeviceNotificationGuard, SessionNotificationGuard};
+pub use loopback::{LoopbackHandle, LoopbackTee};
 pub use policy::{AppPolicyClient, DeviceRole, PolicyClient};
 pub use preset::{
     AppRouteRule, AppVolumeRule, EndpointTarget, Preset, PresetConfig, PresetEngine,

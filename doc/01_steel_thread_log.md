@@ -104,15 +104,23 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
 * **Key Learnings:**
   * `PresetEngine::handle_session_created` shares `resolve_rule_for_app` with `apply_preset`, keeping initial and reactive enforcement identical.
 
+### Step 7: Simultaneous Multi-Output Audio (WASAPI Process Loopback Tee)
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [loopback.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/loopback.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/steel-thread/src/main.rs)
+* **What Was Tested:**
+  * Activated `VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK` via `ActivateAudioInterfaceAsync` (`PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`) targeting `vivaldi.exe` (`pid=15828`) on `PC Primary`.
+  * Rendered captured `48 kHz` stereo `f32` PCM frames to `Speakers (HyperX Cloud II Wireless)` with independent software gain, stepping live from `0.32` perceptual (~`0.10` linear) for 3s to `0.70` perceptual (~`0.49` linear) for 3s (`288,000` frames pumped), without affecting `PC Primary`.
+* **Key Learnings:**
+  * **Perceptual Taper:** Linear amplitude scaling sounds much louder than Windows Volume Mixer scalars (`0.30` linear ≈ `-10.5 dB`), so `LoopbackHandle::set_volume` applies `scalar.powi(2)` to match Windows slider feel.
+  * **Stack `PROPVARIANT` Safety:** Passing a `#[repr(C)]` `StackBlobPropVariant` for `VT_BLOB` avoids `windows_core::PROPVARIANT::drop` calling `PropVariantClear` on stack-allocated `AUDIOCLIENT_ACTIVATION_PARAMS`.
+  * **COM Thread Affinity:** `LoopbackTee::start` passes `endpoint.id` (`String`) to the worker thread and resolves `IMMDevice` on the worker's own MTA COM thread.
+* **Refactor (Red → Green → Refactor):**
+  * Extracted `LoopbackTee` and `LoopbackHandle` (with atomic `set_volume`, `set_mute`, `frames_pumped`, and RAII `Drop` thread join) into `crates/audio-core/src/loopback.rs`.
+  * Removed temporary `windows` / `windows-core` dependencies from `crates/steel-thread/Cargo.toml`.
+
 ---
 
 ## Upcoming Validation Plan
-
-### Step 7: Simultaneous Multi-Output Audio (Architecture & Spike)
-* **Goal:** Validate how to route a single application (e.g., Spotify or Vivaldi) to multiple physical outputs simultaneously with independent volume/mute settings.
-* **Key Gap:** `IAudioPolicyConfigFactory` only routes an app to *one* endpoint at a time. Simultaneous multi-output requires evaluating:
-  * **Option A (WASAPI Process Loopback + Render Tee):** Capture an app's audio stream in user mode via Windows 10/11 Process Loopback (`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`) and render it to secondary endpoint(s) with independent gain—no kernel driver needed, though introduces a small software buffer (~10–20 ms) on the secondary output.
-  * **Option B (Explicit Scope Exclusion):** Keep the zero-latency pure-policy architecture (`00_high_level_spec.md`) and switch an app *between* endpoints rather than duplicating to two simultaneously.
 
 ### Step 8: Single-App Route Reset (`AppPolicyClient`)
 * **Goal:** Validate resetting a single application's persisted endpoint override back to the Windows OS default without calling `ClearAllPersistedApplicationDefaultEndpoints` (which wipes all other apps' routes).

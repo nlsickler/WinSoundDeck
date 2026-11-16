@@ -4,8 +4,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use audio_core::{
-    AppPolicyClient, AppVolumeRule, AudioEnumerator, AudioEvent, AudioSession, ComGuard, DataFlow,
-    DeviceRole, EndpointTarget, PolicyClient, Preset, PresetConfig, PresetEngine,
+    resolve_root_exe_name, AppPolicyClient, AppVolumeRule, AudioEnumerator, AudioEvent,
+    AudioSession, ComGuard, DataFlow, DeviceRole, EndpointTarget, LoopbackTee, PolicyClient,
+    Preset, PresetConfig, PresetEngine,
 };
 
 struct CliConfig {
@@ -18,11 +19,11 @@ struct CliConfig {
 
 fn parse_args() -> CliConfig {
     let mut cfg = CliConfig {
-        step: 6,
+        step: 7,
         device_match: "HyperX".to_string(),
         app_match: "vivaldi.exe".to_string(),
         target_vol: 0.30,
-        hold_secs: 3,
+        hold_secs: 5,
     };
 
     let mut args = env::args().skip(1);
@@ -516,6 +517,56 @@ fn run_step6(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn run_step7(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Result<()> {
+    println!("=== Step 7: WASAPI Process Loopback Tee (Simultaneous Multi-Output) ===");
+    println!(
+        "Target app: \"{}\" | Secondary output: \"{}\" | Scalar: {:.2}\n",
+        cfg.app_match, cfg.device_match, cfg.target_vol
+    );
+
+    let render_eps = enumerator.list_active_endpoints(DataFlow::Render)?;
+    let app_needle = cfg.app_match.to_lowercase();
+    let mut target_pid: Option<(u32, String)> = None;
+    for ep in &render_eps {
+        for s in ep.sessions()? {
+            let root = resolve_root_exe_name(s.pid).unwrap_or_else(|| s.exe_name.clone());
+            if s.exe_name.to_lowercase() == app_needle || root.to_lowercase() == app_needle {
+                target_pid = Some((s.pid, ep.friendly_name.clone()));
+                break;
+            }
+        }
+        if target_pid.is_some() {
+            break;
+        }
+    }
+
+    let Some((pid, primary_name)) = target_pid else {
+        eprintln!("No active session found for \"{}\".", cfg.app_match);
+        return Ok(());
+    };
+    let Some(sec_ep) = render_eps
+        .iter()
+        .find(|ep| ep.friendly_name.to_lowercase().contains(&cfg.device_match.to_lowercase()))
+    else {
+        eprintln!("No active playback endpoint matched \"{}\".", cfg.device_match);
+        return Ok(());
+    };
+
+    println!("Primary: \"{primary_name}\" (pid={pid}) -> Secondary: \"{}\"", sec_ep.friendly_name);
+    let handle = LoopbackTee::start(pid, sec_ep, 0.32)?;
+    println!("  [START] Phase 1: perceptual 0.32 (~0.10 linear) for 3s...");
+    thread::sleep(Duration::from_secs(3));
+
+    handle.set_volume(0.70);
+    println!("  [STEP]  Phase 2: perceptual 0.70 (~0.49 linear) for 3s...");
+    thread::sleep(Duration::from_secs(3));
+
+    let frames = handle.frames_pumped();
+    handle.stop();
+    println!("  [STOP]  Loopback Tee stopped cleanly (pumped {frames} frames).");
+    Ok(())
+}
+
 fn run() -> audio_core::Result<()> {
     let cfg = parse_args();
     let _com = ComGuard::new()?;
@@ -528,8 +579,9 @@ fn run() -> audio_core::Result<()> {
         4 => run_step4(&enumerator, &cfg)?,
         5 => run_step5(&enumerator, &cfg)?,
         6 => run_step6(&enumerator, &cfg)?,
+        7 => run_step7(&enumerator, &cfg)?,
         other => {
-            eprintln!("Unknown --step {other}. Supported: 1..6");
+            eprintln!("Unknown --step {other}. Supported: 1..7");
             std::process::exit(2);
         }
     }
