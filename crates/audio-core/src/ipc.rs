@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use windows::core::HSTRING;
 use windows::Win32::Foundation::{GetLastError, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE};
 use windows::Win32::Storage::FileSystem::{FlushFileBuffers, PIPE_ACCESS_DUPLEX};
+use windows::Win32::System::Console::{
+    SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT,
+};
 use windows::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE,
     PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
@@ -134,6 +137,19 @@ pub enum IpcResponse {
     Error {
         message: String,
     },
+}
+
+/// Registers a Windows console control handler (`Ctrl+C`, `Ctrl+Break`, console close)
+/// that sends `IpcRequest::Shutdown` to `DEFAULT_PIPE_NAME` before exiting the process.
+pub fn install_ctrl_c_daemon_shutdown() {
+    unsafe extern "system" fn handler(ctrl_type: u32) -> windows::Win32::Foundation::BOOL {
+        if matches!(ctrl_type, CTRL_C_EVENT | CTRL_BREAK_EVENT | CTRL_CLOSE_EVENT) {
+            let _ = send_ipc_request(DEFAULT_PIPE_NAME, &IpcRequest::Shutdown);
+            std::process::exit(0);
+        }
+        false.into()
+    }
+    let _ = unsafe { SetConsoleCtrlHandler(Some(handler), true) };
 }
 
 /// Sends a single line-delimited JSON request over a Windows Named Pipe and awaits the response.

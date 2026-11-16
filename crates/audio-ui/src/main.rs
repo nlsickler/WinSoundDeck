@@ -5,7 +5,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use audio_core::ipc::{
-    send_ipc_request, DaemonStatus, IpcRequest, IpcResponse, PresetSummary, DEFAULT_PIPE_NAME,
+    install_ctrl_c_daemon_shutdown, send_ipc_request, DaemonStatus, IpcRequest, IpcResponse,
+    PresetSummary, DEFAULT_PIPE_NAME,
 };
 use audio_core::DataFlow;
 use serde::Serialize;
@@ -207,6 +208,7 @@ fn build_tray_icon() -> tauri::image::Image<'static> {
 }
 
 fn main() {
+    install_ctrl_c_daemon_shutdown();
     ensure_daemon_running();
 
     tauri::Builder::default()
@@ -221,7 +223,10 @@ fn main() {
                 .tooltip("Audio Mixer")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_main_window(app),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        let _ = ipc_call(IpcRequest::Shutdown);
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
