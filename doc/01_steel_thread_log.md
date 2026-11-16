@@ -143,9 +143,19 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
 * **Refactor (Red → Green → Refactor):**
   * Extracted `open_pipe_with_retry` in `crates/audio-core/src/ipc.rs` for resilient client-side pipe connection.
 
+### Step 10: Tauri System Tray & Mixer UI
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [main.rs](file:///c:/Projects/audio-mixer/crates/audio-ui/src/main.rs), [index.html](file:///c:/Projects/audio-mixer/crates/audio-ui/ui/index.html), [app.js](file:///c:/Projects/audio-mixer/crates/audio-ui/ui/app.js), [styles.css](file:///c:/Projects/audio-mixer/crates/audio-ui/ui/styles.css)
+* **What Was Tested:**
+  * Built `crates/audio-ui` (`tauri` v2 with `tray-icon` and vanilla HTML/CSS/JS `frontendDist` — zero Node/npm build step).
+  * Verified `audio-ui.exe` auto-spawns `audio-daemon.exe` headless (`CREATE_NO_WINDOW`) when not already running and connects over `\\.\pipe\audio-mixer-daemon`.
+  * Confirmed live mixer window, system tray icon (`Open Mixer` / `Quit`, hide-to-tray on close), endpoint/session volume & mute controls, and per-app output routing dropdown on the desktop.
+* **Key Learnings:**
+  * Generating the 32x32 RGBA tray icon directly via `tauri::image::Image::new_owned` avoids `default_window_icon()` lifetime/bundling issues when `bundle.active` is `false`.
+  * GUI apps launched from a hidden agent shell don't paint onto the interactive desktop; launching `audio-ui.exe` from the user's desktop session displays both the window and tray icon normally.
+* **Refactor (Red → Green → Refactor):**
+  * Consolidated all Tauri IPC commands through a single `ipc_call` helper in `crates/audio-ui/src/main.rs`.
+
 ---
 
-## Upcoming Validation Plan
-
-### Step 10: Tauri System Tray & Mixer UI
-* **Goal:** Build the lightweight system tray & active mixer UI client on top of the Named Pipe IPC protocol.
+**Steel Thread Complete (Steps 1–10).** Remaining non-critical features and polish are tracked in [03_backlog.md](file:///c:/Projects/audio-mixer/doc/03_backlog.md).

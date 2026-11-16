@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Mixer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-group">
+      <h1>Audio Mixer</h1>
+      <span id="daemon-badge" class="badge badge-offline">Connecting...</span>
+    </div>
+    <button id="refresh-btn" class="btn-secondary" title="Refresh">Refresh</button>
+  </header>
+
+  <main class="container">
+    <section class="panel" id="presets-section">
+      <h2>Presets</h2>
+      <div id="presets-list" class="presets-row"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Outputs</h2>
+      <div id="outputs-list" class="card-list"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Inputs</h2>
+      <div id="inputs-list" class="card-list"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Active Apps</h2>
+      <div id="sessions-list" class="card-list"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
