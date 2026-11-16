@@ -275,13 +275,15 @@ fn handle_request(
             pid,
             volume,
         } => {
+            let vol = volume.clamp(0.0, 1.0);
             let res = enumerator
                 .list_active_endpoints(DataFlow::Render)
                 .and_then(|eps| {
                     if let Some(ep) = eps.into_iter().find(|e| e.id == endpoint_id) {
                         for s in ep.sessions()? {
                             if s.pid == pid {
-                                s.set_volume(volume)?;
+                                s.set_volume(vol)?;
+                                s.set_mute(vol <= 0.0)?;
                             }
                         }
                     }
@@ -401,6 +403,9 @@ fn handle_request(
                 if let Some(lb) = guard.loopbacks.get_mut(&(pid, target_endpoint_id)) {
                     lb.volume = vol;
                     lb.handle.set_volume(vol);
+                    let mute = vol <= 0.0;
+                    lb.muted = mute;
+                    lb.handle.set_mute(mute);
                 }
             }
             (IpcResponse::Ok, false)

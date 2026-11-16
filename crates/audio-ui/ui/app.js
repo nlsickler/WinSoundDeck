@@ -400,14 +400,15 @@ function buildRoutingOutputRow() {
         cb.checked = true;
         return;
       }
-      await invoke("stop_loopback", {
-        pid: session.pid,
-        targetEndpointId: fallback.target_endpoint_id,
-      });
       await invoke("route_app", {
         pid: session.pid,
         flow: "Render",
         endpointId: fallback.target_endpoint_id,
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      await invoke("stop_loopback", {
+        pid: session.pid,
+        targetEndpointId: fallback.target_endpoint_id,
       });
     } else if (cb.checked && !isLoopback) {
       await invoke("start_loopback", {
@@ -493,6 +494,10 @@ function renderRoutingTab(sessions, endpoints, loopbacks) {
 
           const cb = row.querySelector('input[type="checkbox"]');
           cb.checked = enabled;
+          cb.disabled = isPrimary && activeLoopbacks.length === 0;
+          cb.title = cb.disabled
+            ? "Check another output first to switch primary"
+            : "";
 
           const nameEl = row.querySelector(".routing-output-name");
           nameEl.textContent = ep.friendly_name;
