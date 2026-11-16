@@ -4,6 +4,7 @@ let isDraggingSlider = false;
 let activeTab = "apps";
 const collapsedActivePids = new Set();
 const expandedInactivePids = new Set();
+const explicitlyUncheckedPids = new Set();
 const rememberedOutputVolumes = new Map();
 let showInactiveApps = false;
 
@@ -315,6 +316,7 @@ function buildAppCard() {
 
   muteBtn.onclick = async () => {
     const s = card._item;
+    explicitlyUncheckedPids.delete(s.pid);
     await invoke("set_session_mute", {
       endpointId: s.endpoint_id,
       pid: s.pid,
@@ -357,6 +359,7 @@ function buildRoutingOutputRow() {
     const { session, endpoint, isPrimary, isLoopback, activeLoopbacks } = ctx;
     if (isPrimary) {
       if (cb.checked) {
+        explicitlyUncheckedPids.delete(session.pid);
         await invoke("set_session_mute", {
           endpointId: session.endpoint_id,
           pid: session.pid,
@@ -365,6 +368,7 @@ function buildRoutingOutputRow() {
       } else {
         const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
         if (fallback) {
+          explicitlyUncheckedPids.delete(session.pid);
           const fallbackVol = fallback.volume;
           await invoke("route_app", {
             pid: session.pid,
@@ -383,6 +387,7 @@ function buildRoutingOutputRow() {
             finalize: true,
           });
         } else {
+          explicitlyUncheckedPids.add(session.pid);
           await invoke("set_session_mute", {
             endpointId: session.endpoint_id,
             pid: session.pid,
@@ -395,7 +400,8 @@ function buildRoutingOutputRow() {
         (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
         rememberedOutputVolumes.get(`${session.pid}:${endpoint.id}`) ??
         0.5;
-      if (session.muted && activeLoopbacks.length === 0) {
+      if (explicitlyUncheckedPids.has(session.pid) && activeLoopbacks.length === 0) {
+        explicitlyUncheckedPids.delete(session.pid);
         await invoke("route_app", {
           pid: session.pid,
           flow: "Render",
@@ -492,8 +498,12 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
       muteBtn.textContent = s.muted ? "🔇" : "🔉";
       muteBtn.title = s.muted ? "Unmute" : "Mute";
 
+      if (!s.muted) {
+        explicitlyUncheckedPids.delete(s.pid);
+      }
       const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
-      const activeCount = (!s.muted ? 1 : 0) + activeLoopbacks.length;
+      const primaryChecked = !explicitlyUncheckedPids.has(s.pid);
+      const activeCount = (primaryChecked ? 1 : 0) + activeLoopbacks.length;
       card.querySelector(".badge-muted").textContent = s.muted
         ? "Muted"
         : activeCount === 1
@@ -524,7 +534,7 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
           const isPrimary = ep.id === s.endpoint_id;
           const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
           const isLoopback = Boolean(lb);
-          const enabled = (isPrimary && (!s.muted || activeLoopbacks.length > 0)) || isLoopback;
+          const enabled = (isPrimary && !explicitlyUncheckedPids.has(s.pid)) || isLoopback;
 
           row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
           row.classList.toggle("disabled", !enabled);

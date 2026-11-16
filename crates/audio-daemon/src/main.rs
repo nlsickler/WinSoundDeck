@@ -812,8 +812,11 @@ fn handle_set_app_output_volume(
         }
     }
 
-    let has_loopbacks = guard.loopbacks.keys().any(|(p, _)| *p == pid);
-    let primary_eff = if has_loopbacks && primary_vol < 0.05 {
+    let has_audible_loopback = guard
+        .loopbacks
+        .iter()
+        .any(|((p, _), lb)| *p == pid && lb.volume > 0.0 && !lb.muted);
+    let primary_eff = if has_audible_loopback && primary_vol < 0.05 {
         0.05
     } else {
         primary_vol
