@@ -13,8 +13,9 @@ use audio_core::ipc::{
     PresetSummary, SessionStatus, DEFAULT_PIPE_NAME,
 };
 use audio_core::{
-    resolve_app_display_name, resolve_root_exe_name, AppPolicyClient, AudioEnumerator, AudioEvent,
-    ComGuard, DataFlow, DeviceRole, LoopbackTee, PresetConfig, PresetEngine,
+    log_debug, log_error, log_info, log_warn, resolve_app_display_name, resolve_root_exe_name,
+    AppPolicyClient, AudioEnumerator, AudioEvent, ComGuard, DataFlow, DeviceRole, LoopbackTee,
+    PresetConfig, PresetEngine,
 };
 
 struct DaemonState {
@@ -397,46 +398,40 @@ fn handle_request(
                 ap.set_app_endpoint(pid, flow, DeviceRole::Console, &endpoint_id)?;
                 ap.set_app_endpoint(pid, flow, DeviceRole::Multimedia, &endpoint_id)
             });
-            match res {
-                Ok(()) => {
-                    if let Ok(mut guard) = state.lock() {
-                        let path = guard.app_settings_path.clone();
-                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
-                            s.primary_endpoint_id = Some(endpoint_id.clone());
-                        });
-                    }
-                    (IpcResponse::Ok, false)
-                }
-                Err(e) => (
-                    IpcResponse::Error {
-                        message: e.to_string(),
-                    },
-                    false,
-                ),
+            if let Err(ref e) = res {
+                log_warn!(
+                    "RouteApp(pid={pid}, endpoint={endpoint_id}) deferred (persisting for next active stream): {e}"
+                );
+            } else {
+                log_info!("RouteApp(pid={pid}, endpoint={endpoint_id}) applied");
             }
+            if let Ok(mut guard) = state.lock() {
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                    s.primary_endpoint_id = Some(endpoint_id.clone());
+                });
+                // Allow SessionCreated to re-apply if the session is currently inactive.
+                guard.applied_pids.remove(&pid);
+            }
+            (IpcResponse::Ok, false)
         }
         IpcRequest::ResetAppRoute { pid, flow } => {
             let res = AppPolicyClient::new().and_then(|ap| {
                 ap.reset_app_endpoint(pid, flow, DeviceRole::Console)?;
                 ap.reset_app_endpoint(pid, flow, DeviceRole::Multimedia)
             });
-            match res {
-                Ok(()) => {
-                    if let Ok(mut guard) = state.lock() {
-                        let path = guard.app_settings_path.clone();
-                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
-                            s.primary_endpoint_id = None;
-                        });
-                    }
-                    (IpcResponse::Ok, false)
-                }
-                Err(e) => (
-                    IpcResponse::Error {
-                        message: e.to_string(),
-                    },
-                    false,
-                ),
+            if let Err(ref e) = res {
+                log_warn!("ResetAppRoute(pid={pid}) deferred (clearing persisted route): {e}");
+            } else {
+                log_info!("ResetAppRoute(pid={pid}) applied");
             }
+            if let Ok(mut guard) = state.lock() {
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                    s.primary_endpoint_id = None;
+                });
+            }
+            (IpcResponse::Ok, false)
         }
         IpcRequest::StartLoopback {
             pid,
@@ -467,6 +462,9 @@ fn handle_request(
                 });
             match res {
                 Ok(handle) => {
+                    log_info!(
+                        "StartLoopback(pid={pid}, target={target_endpoint_id}, vol={vol:.2}) started"
+                    );
                     if let Ok(mut guard) = state.lock() {
                         guard.loopbacks.insert(
                             (pid, target_endpoint_id.clone()),
@@ -497,7 +495,12 @@ fn handle_request(
                     }
                     (IpcResponse::Ok, false)
                 }
-                Err(message) => (IpcResponse::Error { message }, false),
+                Err(message) => {
+                    log_error!(
+                        "StartLoopback(pid={pid}, target={target_endpoint_id}) failed: {message}"
+                    );
+                    (IpcResponse::Error { message }, false)
+                }
             }
         }
         IpcRequest::SetLoopbackVolume {
@@ -576,10 +579,18 @@ fn handle_request(
             endpoint_id,
             volume,
             finalize,
-        } => match handle_set_app_output_volume(enumerator, state, pid, &endpoint_id, volume, finalize) {
-            Ok(()) => (IpcResponse::Ok, false),
-            Err(message) => (IpcResponse::Error { message }, false),
-        },
+        } => {
+            log_debug!(
+                "SetAppOutputVolume(pid={pid}, endpoint={endpoint_id}, vol={volume:.2}, finalize={finalize})"
+            );
+            match handle_set_app_output_volume(enumerator, state, pid, &endpoint_id, volume, finalize) {
+                Ok(()) => (IpcResponse::Ok, false),
+                Err(message) => {
+                    log_error!("SetAppOutputVolume(pid={pid}) failed: {message}");
+                    (IpcResponse::Error { message }, false)
+                }
+            }
+        }
         IpcRequest::SetEndpointHidden {
             endpoint_id,
             hidden,
@@ -841,7 +852,9 @@ fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle<()>
 }
 
 fn main() {
+    audio_core::logging::init_logging("audio-daemon");
     let (config_path, pipe_name) = parse_args();
+    log_info!("Starting audio-daemon on pipe '{pipe_name}'");
     let _com = ComGuard::new().expect("COM init failed");
     let enumerator = AudioEnumerator::new().expect("AudioEnumerator init failed");
     let config = load_or_default_config(&config_path);

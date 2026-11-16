@@ -233,6 +233,8 @@ fn build_tray_icon() -> tauri::image::Image<'static> {
 }
 
 fn main() {
+    audio_core::logging::init_logging("audio-ui");
+    audio_core::log_info!("Starting audio-ui");
     install_ctrl_c_daemon_shutdown();
     ensure_daemon_running();
 

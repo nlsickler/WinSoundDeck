@@ -3,6 +3,7 @@ mod endpoint;
 mod enumerator;
 mod events;
 pub mod ipc;
+pub mod logging;
 mod loopback;
 mod policy;
 mod preset;
