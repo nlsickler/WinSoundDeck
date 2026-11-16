@@ -375,6 +375,12 @@ function buildRoutingOutputRow() {
           targetEndpointId: endpoint.id,
           volume: remembered,
         });
+        await invoke("set_app_output_volume", {
+          pid: session.pid,
+          endpointId: endpoint.id,
+          volume: remembered,
+          finalize: true,
+        });
       }
     } else if (!cb.checked && isLoopback) {
       await invoke("stop_loopback", {
