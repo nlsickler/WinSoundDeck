@@ -110,6 +110,17 @@ fn collect_status(
             if flow == DataFlow::Render {
                 if let Ok(ep_sessions) = ep.sessions() {
                     for s in ep_sessions {
+                        let root_exe_name =
+                            resolve_root_exe_name(s.pid).unwrap_or_else(|| s.exe_name.clone());
+                        if matches!(
+                            s.exe_name.to_ascii_lowercase().as_str(),
+                            "audio-daemon.exe" | "audio-ui.exe"
+                        ) || matches!(
+                            root_exe_name.to_ascii_lowercase().as_str(),
+                            "audio-daemon.exe" | "audio-ui.exe"
+                        ) {
+                            continue;
+                        }
                         if let Some((existing_active, _)) = sessions_by_pid.get(&s.pid) {
                             if *existing_active || !s.is_active {
                                 continue;
@@ -119,8 +130,6 @@ fn collect_status(
                         }
                         let vol = s.volume().unwrap_or(1.0);
                         let muted = s.is_muted().unwrap_or(false);
-                        let root_exe_name =
-                            resolve_root_exe_name(s.pid).unwrap_or_else(|| s.exe_name.clone());
                         let display_name = resolve_app_display_name(s.pid)
                             .unwrap_or_else(|| root_exe_name.clone());
                         sessions_by_pid.insert(
