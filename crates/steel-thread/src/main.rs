@@ -19,11 +19,11 @@ struct CliConfig {
 
 fn parse_args() -> CliConfig {
     let mut cfg = CliConfig {
-        step: 7,
+        step: 8,
         device_match: "HyperX".to_string(),
         app_match: "vivaldi.exe".to_string(),
         target_vol: 0.30,
-        hold_secs: 5,
+        hold_secs: 2,
     };
 
     let mut args = env::args().skip(1);
@@ -567,6 +567,63 @@ fn run_step7(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn run_step8(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Result<()> {
+    println!("=== Step 8: Single-App Route Reset (AppPolicyClient::reset_app_endpoint) ===");
+    println!(
+        "Target app: \"{}\" | Target output: \"{}\" | Hold: {}s\n",
+        cfg.app_match, cfg.device_match, cfg.hold_secs
+    );
+
+    let app_policy = AppPolicyClient::new()?;
+    let render_eps = enumerator.list_active_endpoints(DataFlow::Render)?;
+    let Some(target_ep) = render_eps
+        .iter()
+        .find(|ep| ep.friendly_name.to_lowercase().contains(&cfg.device_match.to_lowercase()))
+    else {
+        eprintln!("No active playback endpoint matched \"{}\".", cfg.device_match);
+        return Ok(());
+    };
+
+    let app_needle = cfg.app_match.to_lowercase();
+    let mut found_pid = None;
+    for ep in &render_eps {
+        for s in ep.sessions()? {
+            if s.exe_name.to_lowercase() == app_needle {
+                found_pid = Some(s.pid);
+                break;
+            }
+        }
+        if found_pid.is_some() {
+            break;
+        }
+    }
+    let pid = match found_pid {
+        Some(p) => p,
+        None => {
+            let self_pid = std::process::id();
+            println!(
+                "No active session for \"{}\"; probing with current process pid={self_pid}.",
+                cfg.app_match
+            );
+            self_pid
+        }
+    };
+
+    app_policy.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, &target_ep.id)?;
+    app_policy.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, &target_ep.id)?;
+    let applied = app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [APPLY] pid={pid} Multimedia persisted = \"{applied}\"");
+
+    thread::sleep(Duration::from_secs(cfg.hold_secs));
+
+    app_policy.reset_app_endpoint(pid, DataFlow::Render, DeviceRole::Console)?;
+    app_policy.reset_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
+    let reset = app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [RESET] pid={pid} Multimedia persisted = \"{reset}\"");
+
+    Ok(())
+}
+
 fn run() -> audio_core::Result<()> {
     let cfg = parse_args();
     let _com = ComGuard::new()?;
@@ -580,8 +637,9 @@ fn run() -> audio_core::Result<()> {
         5 => run_step5(&enumerator, &cfg)?,
         6 => run_step6(&enumerator, &cfg)?,
         7 => run_step7(&enumerator, &cfg)?,
+        8 => run_step8(&enumerator, &cfg)?,
         other => {
-            eprintln!("Unknown --step {other}. Supported: 1..7");
+            eprintln!("Unknown --step {other}. Supported: 1..8");
             std::process::exit(2);
         }
     }

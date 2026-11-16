@@ -118,12 +118,18 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
   * Extracted `LoopbackTee` and `LoopbackHandle` (with atomic `set_volume`, `set_mute`, `frames_pumped`, and RAII `Drop` thread join) into `crates/audio-core/src/loopback.rs`.
   * Removed temporary `windows` / `windows-core` dependencies from `crates/steel-thread/Cargo.toml`.
 
+### Step 8: Single-App Route Reset (`AppPolicyClient`)
+* **Status:** Passed + Refactored (2026-11-15)
+* **Code:** [policy.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/policy.rs), [preset.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/preset.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/steel-thread/src/main.rs)
+* **What Was Tested:**
+  * Routed `vivaldi.exe` to `Speakers (HyperX Cloud II Wireless)` via `set_app_endpoint`, verified SWD path readback, then called `reset_app_endpoint` (passing a null `HSTRING` handle to `SetPersistedDefaultAudioEndpoint` on slot 25) and confirmed `get_app_endpoint` returned `""` (OS default).
+* **Refactor (Red → Green → Refactor):**
+  * Added `AppPolicyClient::reset_app_endpoint` and `AppPolicyClient::set_app_endpoint_swd` in `policy.rs`.
+  * Updated `PresetSnapshot` in `preset.rs` to capture and restore each routed app's prior SWD path individually instead of calling `clear_all_app_endpoints()`.
+
 ---
 
 ## Upcoming Validation Plan
-
-### Step 8: Single-App Route Reset (`AppPolicyClient`)
-* **Goal:** Validate resetting a single application's persisted endpoint override back to the Windows OS default without calling `ClearAllPersistedApplicationDefaultEndpoints` (which wipes all other apps' routes).
 
 ### Step 9: Background Daemon, Named Pipe IPC & Hot-Plug Re-Enforcement
 * **Goal:** Decouple the headless engine from the UI and enforce presets continuously.

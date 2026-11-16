@@ -83,14 +83,16 @@ pub struct PresetSnapshot {
     default_roles: Vec<(DeviceRole, DataFlow, String)>,
     endpoint_volumes: Vec<(DataFlow, String, EndpointVolumeState)>,
     session_volumes: Vec<(DataFlow, String, u32, f32, bool)>,
-    applied_app_routes: bool,
+    app_routes: Vec<(u32, DataFlow, DeviceRole, String)>,
 }
 
 impl PresetSnapshot {
     pub fn restore(self, enumerator: &AudioEnumerator) -> Result<()> {
-        if self.applied_app_routes {
+        if !self.app_routes.is_empty() {
             if let Ok(app_policy) = AppPolicyClient::new() {
-                let _ = app_policy.clear_all_app_endpoints();
+                for (pid, flow, role, orig_swd) in self.app_routes {
+                    let _ = app_policy.set_app_endpoint_swd(pid, flow, role, &orig_swd);
+                }
             }
         }
 
@@ -141,7 +143,7 @@ impl<'a> PresetEngine<'a> {
             default_roles: Vec::new(),
             endpoint_volumes: Vec::new(),
             session_volumes: Vec::new(),
-            applied_app_routes: false,
+            app_routes: Vec::new(),
         };
 
         let policy = PolicyClient::new()?;
@@ -238,6 +240,16 @@ impl<'a> PresetEngine<'a> {
                                     &route.roles[..]
                                 };
                                 for &role in roles {
+                                    if let Ok(orig_swd) =
+                                        app_policy.get_app_endpoint(s.pid, route.flow, role)
+                                    {
+                                        snapshot.app_routes.push((
+                                            s.pid,
+                                            route.flow,
+                                            role,
+                                            orig_swd,
+                                        ));
+                                    }
                                     app_policy.set_app_endpoint(
                                         s.pid,
                                         route.flow,
@@ -245,7 +257,6 @@ impl<'a> PresetEngine<'a> {
                                         &target_ep.id,
                                     )?;
                                 }
-                                snapshot.applied_app_routes = true;
                             }
                         }
                     }

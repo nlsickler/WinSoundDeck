@@ -302,6 +302,21 @@ impl AppPolicyClient {
         endpoint_id: &str,
     ) -> Result<()> {
         let swd_id = Self::format_swd_device_id(endpoint_id, flow);
+        self.set_app_endpoint_swd(pid, flow, role, &swd_id)
+    }
+
+    /// Routes `pid` for `flow` and `role` using a pre-formatted SWD device interface path
+    /// (or resets to OS default if `swd_id` is empty).
+    pub fn set_app_endpoint_swd(
+        &self,
+        pid: u32,
+        flow: DataFlow,
+        role: DeviceRole,
+        swd_id: &str,
+    ) -> Result<()> {
+        if swd_id.is_empty() {
+            return self.reset_app_endpoint(pid, flow, role);
+        }
         let h = HSTRING::from(swd_id);
         // SAFETY: `HSTRING` is `#[repr(transparent)]` over a WinRT `HSTRING` handle and remains alive
         // for the duration of the synchronous COM call.
@@ -316,6 +331,20 @@ impl AppPolicyClient {
         };
         drop(h);
         res
+    }
+
+    /// Resets a single app's persisted endpoint override back to the OS default.
+    pub fn reset_app_endpoint(&self, pid: u32, flow: DataFlow, role: DeviceRole) -> Result<()> {
+        let null_hstring: *mut std::ffi::c_void = std::ptr::null_mut();
+        // SAFETY: Passing a null `HSTRING` handle instructs `AudioPolicyConfig` to clear this PID's override.
+        match &self.inner {
+            AppPolicyInner::V2(f) => {
+                unsafe { set_persisted_v2(f, pid, flow.into(), role.into(), null_hstring).ok() }
+            }
+            AppPolicyInner::V1(f) => {
+                unsafe { set_persisted_v1(f, pid, flow.into(), role.into(), null_hstring).ok() }
+            }
+        }
     }
 
     /// Reads the persisted SWD endpoint path for `pid`, `flow`, and `role` (empty if using OS default).
