@@ -209,14 +209,40 @@ fn handle_request(
                     for ep in &mut status.endpoints {
                         ep.hidden = app_settings_snapshot.hidden_endpoints.contains(&ep.id);
                     }
+                    let mut merged_loopbacks = loopbacks;
                     for s in &mut status.sessions {
                         if let Some(key) = AppSettingsStore::key_for_pid(s.pid) {
                             if let Some(cfg) = app_settings_snapshot.apps.get(&key) {
                                 s.saved_volumes = cfg.output_volumes.clone();
+                                if !s.is_active {
+                                    if let Some(ref ep_id) = cfg.primary_endpoint_id {
+                                        s.endpoint_id = ep_id.clone();
+                                    }
+                                    if let Some(&v) = cfg.output_volumes.get(&s.endpoint_id) {
+                                        s.volume = v;
+                                    } else if let Some(v) = cfg.volume {
+                                        s.volume = v;
+                                    }
+                                    if let Some(m) = cfg.muted {
+                                        s.muted = m;
+                                    }
+                                    for sec in &cfg.secondary_outputs {
+                                        if !merged_loopbacks.iter().any(|lb| {
+                                            lb.pid == s.pid && lb.target_endpoint_id == sec.endpoint_id
+                                        }) {
+                                            merged_loopbacks.push(LoopbackStatus {
+                                                pid: s.pid,
+                                                target_endpoint_id: sec.endpoint_id.clone(),
+                                                volume: sec.volume,
+                                                muted: sec.muted,
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                    status.loopbacks = loopbacks;
+                    status.loopbacks = merged_loopbacks;
                     (IpcResponse::Status(status), false)
                 }
                 Err(e) => (
@@ -394,36 +420,53 @@ fn handle_request(
             flow,
             endpoint_id,
         } => {
-            let res = AppPolicyClient::new().and_then(|ap| {
-                ap.set_app_endpoint(pid, flow, DeviceRole::Console, &endpoint_id)?;
-                ap.set_app_endpoint(pid, flow, DeviceRole::Multimedia, &endpoint_id)
-            });
-            if let Err(ref e) = res {
-                log_warn!(
-                    "RouteApp(pid={pid}, endpoint={endpoint_id}) deferred (persisting for next active stream): {e}"
-                );
+            let active = enumerator
+                .list_active_endpoints(DataFlow::Render)
+                .map(|eps| is_pid_active(&eps, pid))
+                .unwrap_or(false);
+            if active {
+                let res = AppPolicyClient::new().and_then(|ap| {
+                    ap.set_app_endpoint(pid, flow, DeviceRole::Console, &endpoint_id)?;
+                    ap.set_app_endpoint(pid, flow, DeviceRole::Multimedia, &endpoint_id)
+                });
+                if let Err(ref e) = res {
+                    log_warn!(
+                        "RouteApp(pid={pid}, endpoint={endpoint_id}) failed: {e}"
+                    );
+                } else {
+                    log_info!("RouteApp(pid={pid}, endpoint={endpoint_id}) applied");
+                }
             } else {
-                log_info!("RouteApp(pid={pid}, endpoint={endpoint_id}) applied");
+                log_info!(
+                    "RouteApp(pid={pid}, endpoint={endpoint_id}) persisted for inactive session"
+                );
             }
             if let Ok(mut guard) = state.lock() {
                 let path = guard.app_settings_path.clone();
                 guard.app_settings.upsert_for_pid(pid, &path, |s| {
                     s.primary_endpoint_id = Some(endpoint_id.clone());
                 });
-                // Allow SessionCreated to re-apply if the session is currently inactive.
                 guard.applied_pids.remove(&pid);
             }
             (IpcResponse::Ok, false)
         }
         IpcRequest::ResetAppRoute { pid, flow } => {
-            let res = AppPolicyClient::new().and_then(|ap| {
-                ap.reset_app_endpoint(pid, flow, DeviceRole::Console)?;
-                ap.reset_app_endpoint(pid, flow, DeviceRole::Multimedia)
-            });
-            if let Err(ref e) = res {
-                log_warn!("ResetAppRoute(pid={pid}) deferred (clearing persisted route): {e}");
+            let active = enumerator
+                .list_active_endpoints(DataFlow::Render)
+                .map(|eps| is_pid_active(&eps, pid))
+                .unwrap_or(false);
+            if active {
+                let res = AppPolicyClient::new().and_then(|ap| {
+                    ap.reset_app_endpoint(pid, flow, DeviceRole::Console)?;
+                    ap.reset_app_endpoint(pid, flow, DeviceRole::Multimedia)
+                });
+                if let Err(ref e) = res {
+                    log_warn!("ResetAppRoute(pid={pid}) failed: {e}");
+                } else {
+                    log_info!("ResetAppRoute(pid={pid}) applied");
+                }
             } else {
-                log_info!("ResetAppRoute(pid={pid}) applied");
+                log_info!("ResetAppRoute(pid={pid}) cleared for inactive session");
             }
             if let Ok(mut guard) = state.lock() {
                 let path = guard.app_settings_path.clone();
@@ -443,6 +486,9 @@ fn handle_request(
                 .list_active_endpoints(DataFlow::Render)
                 .map_err(|e| e.to_string())
                 .and_then(|eps| {
+                    if !is_pid_active(&eps, pid) {
+                        return Ok(None);
+                    }
                     let primary = find_primary_session(&eps, pid);
                     if let Some((ref cur_primary, _)) = primary {
                         if cur_primary == &target_endpoint_id {
@@ -458,22 +504,30 @@ fn handle_request(
                     let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
                     handle.set_linear_gain(ratio.powi(2));
                     handle.set_mute(vol <= 0.0);
-                    Ok(handle)
+                    Ok(Some(handle))
                 });
             match res {
-                Ok(handle) => {
-                    log_info!(
-                        "StartLoopback(pid={pid}, target={target_endpoint_id}, vol={vol:.2}) started"
-                    );
-                    if let Ok(mut guard) = state.lock() {
-                        guard.loopbacks.insert(
-                            (pid, target_endpoint_id.clone()),
-                            ActiveLoopback {
-                                handle,
-                                volume: vol,
-                                muted: vol <= 0.0,
-                            },
+                Ok(maybe_handle) => {
+                    if let Some(handle) = maybe_handle {
+                        log_info!(
+                            "StartLoopback(pid={pid}, target={target_endpoint_id}, vol={vol:.2}) started"
                         );
+                        if let Ok(mut guard) = state.lock() {
+                            guard.loopbacks.insert(
+                                (pid, target_endpoint_id.clone()),
+                                ActiveLoopback {
+                                    handle,
+                                    volume: vol,
+                                    muted: vol <= 0.0,
+                                },
+                            );
+                        }
+                    } else {
+                        log_info!(
+                            "StartLoopback(pid={pid}, target={target_endpoint_id}, vol={vol:.2}) persisted for inactive session"
+                        );
+                    }
+                    if let Ok(mut guard) = state.lock() {
                         let path = guard.app_settings_path.clone();
                         guard.app_settings.upsert_for_pid(pid, &path, |s| {
                             s.output_volumes.insert(target_endpoint_id.clone(), vol);
@@ -609,6 +663,14 @@ fn handle_request(
     }
 }
 
+fn is_pid_active(eps: &[audio_core::AudioEndpoint], pid: u32) -> bool {
+    eps.iter().any(|ep| {
+        ep.sessions()
+            .map(|sessions| sessions.into_iter().any(|s| s.pid == pid && s.is_active))
+            .unwrap_or(false)
+    })
+}
+
 fn find_primary_session(eps: &[audio_core::AudioEndpoint], pid: u32) -> Option<(String, f32)> {
     let mut fallback: Option<(String, f32)> = None;
     for ep in eps {
@@ -647,6 +709,27 @@ fn handle_set_app_output_volume(
     };
 
     let mut guard = state.lock().map_err(|e| e.to_string())?;
+
+    if !is_pid_active(&eps, pid) {
+        let ep_key = endpoint_id.to_string();
+        let path = guard.app_settings_path.clone();
+        guard.app_settings.upsert_for_pid(pid, &path, |s| {
+            s.output_volumes.insert(ep_key.clone(), vol);
+            let primary_id = s.primary_endpoint_id.get_or_insert_with(|| cur_primary.clone());
+            if *primary_id == ep_key {
+                s.volume = Some(vol);
+                s.muted = Some(vol <= 0.0);
+            } else if let Some(sec) = s
+                .secondary_outputs
+                .iter_mut()
+                .find(|o| o.endpoint_id == ep_key)
+            {
+                sec.volume = vol;
+                sec.muted = vol <= 0.0;
+            }
+        });
+        return Ok(());
+    }
 
     if endpoint_id == cur_primary {
         primary_vol = vol;
