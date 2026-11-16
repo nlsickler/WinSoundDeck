@@ -334,6 +334,7 @@ function buildRoutingOutputRow() {
       } else {
         const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
         if (fallback) {
+          const fallbackVol = fallback.volume;
           await invoke("route_app", {
             pid: session.pid,
             flow: "Render",
@@ -343,6 +344,12 @@ function buildRoutingOutputRow() {
           await invoke("stop_loopback", {
             pid: session.pid,
             targetEndpointId: fallback.target_endpoint_id,
+          });
+          await invoke("set_app_output_volume", {
+            pid: session.pid,
+            endpointId: fallback.target_endpoint_id,
+            volume: fallbackVol,
+            finalize: true,
           });
         } else {
           await invoke("set_session_mute", {
@@ -368,6 +375,12 @@ function buildRoutingOutputRow() {
           endpointId: endpoint.id,
           pid: session.pid,
           muted: false,
+        });
+        await invoke("set_app_output_volume", {
+          pid: session.pid,
+          endpointId: endpoint.id,
+          volume: remembered,
+          finalize: true,
         });
       } else {
         await invoke("start_loopback", {

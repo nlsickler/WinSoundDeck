@@ -109,13 +109,19 @@ impl AppSettingsStore {
             }
         }
 
+        let target_vol = settings
+            .primary_endpoint_id
+            .as_ref()
+            .and_then(|ep_id| settings.output_volumes.get(ep_id).copied())
+            .or(settings.volume);
+
         if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
-            if settings.volume.is_some() || settings.muted.is_some() {
+            if target_vol.is_some() || settings.muted.is_some() {
                 for ep in &eps {
                     if let Ok(sessions) = ep.sessions() {
                         for s in sessions {
                             if s.pid == pid {
-                                if let Some(v) = settings.volume {
+                                if let Some(v) = target_vol {
                                     let _ = s.set_volume(v.clamp(0.0, 1.0));
                                 }
                                 if let Some(m) = settings.muted {
