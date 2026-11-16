@@ -73,6 +73,8 @@ pub struct SessionStatus {
     pub pid: u32,
     pub exe_name: String,
     pub root_exe_name: String,
+    #[serde(default)]
+    pub display_name: String,
     pub volume: f32,
     pub muted: bool,
 }

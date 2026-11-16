@@ -299,7 +299,7 @@ function renderAppsTab(sessions, endpoints) {
     buildAppCard,
     (card, s) => {
       card._item = s;
-      const name = s.root_exe_name || s.exe_name || `PID ${s.pid}`;
+      const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       card.querySelector(".card-title").textContent = name;
       card.querySelector(".badge-muted").textContent = epNames.get(s.endpoint_id) || "Unknown";
       card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
@@ -367,7 +367,7 @@ function renderRoutingTab(sessions, endpoints) {
     buildRoutingCard,
     (card, s) => {
       card._item = s;
-      const name = s.root_exe_name || s.exe_name || `PID ${s.pid}`;
+      const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       card.querySelector(".card-title").textContent = name;
       card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
 

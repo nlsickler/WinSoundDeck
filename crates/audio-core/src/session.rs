@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use windows::core::{GUID, PWSTR};
+use windows::core::{GUID, HSTRING, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 use windows::Win32::Media::Audio::ISimpleAudioVolume;
+use windows::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
+};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
@@ -49,9 +52,9 @@ impl AudioSession {
     }
 }
 
-pub(crate) fn resolve_process_exe_name(pid: u32) -> Option<String> {
+pub(crate) fn resolve_process_full_path(pid: u32) -> Option<String> {
     if pid == 0 {
-        return Some("System Idle / Audio Engine".to_string());
+        return None;
     }
     let handle: HANDLE =
         unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()? };
@@ -71,7 +74,14 @@ pub(crate) fn resolve_process_exe_name(pid: u32) -> Option<String> {
     }
     ok.ok()?;
 
-    let full_path = String::from_utf16_lossy(&buf[..size as usize]);
+    Some(String::from_utf16_lossy(&buf[..size as usize]))
+}
+
+pub(crate) fn resolve_process_exe_name(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return Some("System Idle / Audio Engine".to_string());
+    }
+    let full_path = resolve_process_full_path(pid)?;
     Some(
         Path::new(&full_path)
             .file_name()
@@ -96,8 +106,28 @@ const SHELL_ROOT_EXES: &[&str] = &[
 /// Walks the Windows process tree via `CreateToolhelp32Snapshot` to find the root application
 /// executable name (stopping before system/shell launchers like `explorer.exe`).
 pub fn resolve_root_exe_name(pid: u32) -> Option<String> {
+    resolve_root_pid_and_name(pid).map(|(_, name)| name)
+}
+
+/// Resolves a user-friendly application display name (PE `FileDescription` / `ProductName`)
+/// for the root application process, falling back to the executable stem.
+pub fn resolve_app_display_name(pid: u32) -> Option<String> {
+    let (root_pid, root_name) = resolve_root_pid_and_name(pid)?;
+    if let Some(full_path) = resolve_process_full_path(root_pid) {
+        if let Some(desc) = read_pe_file_description(&full_path) {
+            return Some(desc);
+        }
+    }
+    let stem = root_name
+        .strip_suffix(".exe")
+        .or_else(|| root_name.strip_suffix(".EXE"))
+        .unwrap_or(&root_name);
+    Some(stem.to_string())
+}
+
+fn resolve_root_pid_and_name(pid: u32) -> Option<(u32, String)> {
     if pid == 0 {
-        return Some("System Idle / Audio Engine".to_string());
+        return Some((0, "System Sounds".to_string()));
     }
 
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()? };
@@ -150,5 +180,62 @@ pub fn resolve_root_exe_name(pid: u32) -> Option<String> {
         current = ppid;
     }
 
-    Some(last_name)
+    Some((current, last_name))
+}
+
+fn read_pe_file_description(exe_path: &str) -> Option<String> {
+    let wide_path = HSTRING::from(exe_path);
+    let mut handle = 0u32;
+    let size = unsafe { GetFileVersionInfoSizeW(&wide_path, Some(&mut handle)) };
+    if size == 0 {
+        return None;
+    }
+
+    let mut buf = vec![0u8; size as usize];
+    unsafe {
+        GetFileVersionInfoW(&wide_path, handle, size, buf.as_mut_ptr().cast()).ok()?;
+    }
+
+    let mut lang_cp = (0x0409u16, 0x04b0u16);
+    let trans_key = HSTRING::from(r"\VarFileInfo\Translation");
+    let mut trans_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let mut trans_len = 0u32;
+    // SAFETY: `buf` holds the version resource block populated by `GetFileVersionInfoW`.
+    if unsafe { VerQueryValueW(buf.as_ptr().cast(), &trans_key, &mut trans_ptr, &mut trans_len) }
+        .as_bool()
+        && !trans_ptr.is_null()
+        && trans_len >= 4
+    {
+        let pair = unsafe { std::slice::from_raw_parts(trans_ptr.cast::<u16>(), 2) };
+        lang_cp = (pair[0], pair[1]);
+    }
+
+    let sub_blocks = [
+        format!(r"\StringFileInfo\{:04x}{:04x}\FileDescription", lang_cp.0, lang_cp.1),
+        format!(r"\StringFileInfo\{:04x}{:04x}\ProductName", lang_cp.0, lang_cp.1),
+        r"\StringFileInfo\040904b0\FileDescription".to_string(),
+        r"\StringFileInfo\040904b0\ProductName".to_string(),
+    ];
+
+    for sub in sub_blocks {
+        let key = HSTRING::from(sub);
+        let mut val_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut val_len = 0u32;
+        if unsafe { VerQueryValueW(buf.as_ptr().cast(), &key, &mut val_ptr, &mut val_len) }
+            .as_bool()
+            && !val_ptr.is_null()
+            && val_len > 1
+        {
+            let wide = unsafe {
+                std::slice::from_raw_parts(val_ptr.cast::<u16>(), val_len as usize)
+            };
+            let trimmed_len = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
+            let text = String::from_utf16_lossy(&wide[..trimmed_len]).trim().to_string();
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+    }
+
+    None
 }

@@ -9,8 +9,8 @@ use audio_core::ipc::{
     SessionStatus, DEFAULT_PIPE_NAME,
 };
 use audio_core::{
-    resolve_root_exe_name, AppPolicyClient, AudioEnumerator, AudioEvent, ComGuard, DataFlow,
-    DeviceRole, PresetConfig, PresetEngine,
+    resolve_app_display_name, resolve_root_exe_name, AppPolicyClient, AudioEnumerator, AudioEvent,
+    ComGuard, DataFlow, DeviceRole, PresetConfig, PresetEngine,
 };
 
 struct DaemonState {
@@ -105,11 +105,14 @@ fn collect_status(
                         let muted = s.is_muted().unwrap_or(false);
                         let root_exe_name =
                             resolve_root_exe_name(s.pid).unwrap_or_else(|| s.exe_name.clone());
+                        let display_name = resolve_app_display_name(s.pid)
+                            .unwrap_or_else(|| root_exe_name.clone());
                         sessions.push(SessionStatus {
                             endpoint_id: ep.id.clone(),
                             pid: s.pid,
                             exe_name: s.exe_name,
                             root_exe_name,
+                            display_name,
                             volume: vol,
                             muted,
                         });
