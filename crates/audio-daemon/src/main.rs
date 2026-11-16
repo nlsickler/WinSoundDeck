@@ -87,7 +87,8 @@ fn collect_status(
         .unwrap_or_default();
 
     let mut endpoints = Vec::new();
-    let mut sessions = Vec::new();
+    let mut sessions_by_pid: HashMap<u32, (bool, SessionStatus)> = HashMap::new();
+    let mut session_order: Vec<u32> = Vec::new();
 
     for flow in [DataFlow::Render, DataFlow::Capture] {
         for ep in enumerator.list_active_endpoints(flow)? {
@@ -109,26 +110,44 @@ fn collect_status(
             if flow == DataFlow::Render {
                 if let Ok(ep_sessions) = ep.sessions() {
                     for s in ep_sessions {
+                        if let Some((existing_active, _)) = sessions_by_pid.get(&s.pid) {
+                            if *existing_active || !s.is_active {
+                                continue;
+                            }
+                        } else {
+                            session_order.push(s.pid);
+                        }
                         let vol = s.volume().unwrap_or(1.0);
                         let muted = s.is_muted().unwrap_or(false);
                         let root_exe_name =
                             resolve_root_exe_name(s.pid).unwrap_or_else(|| s.exe_name.clone());
                         let display_name = resolve_app_display_name(s.pid)
                             .unwrap_or_else(|| root_exe_name.clone());
-                        sessions.push(SessionStatus {
-                            endpoint_id: ep.id.clone(),
-                            pid: s.pid,
-                            exe_name: s.exe_name,
-                            root_exe_name,
-                            display_name,
-                            volume: vol,
-                            muted,
-                        });
+                        sessions_by_pid.insert(
+                            s.pid,
+                            (
+                                s.is_active,
+                                SessionStatus {
+                                    endpoint_id: ep.id.clone(),
+                                    pid: s.pid,
+                                    exe_name: s.exe_name,
+                                    root_exe_name,
+                                    display_name,
+                                    volume: vol,
+                                    muted,
+                                },
+                            ),
+                        );
                     }
                 }
             }
         }
     }
+
+    let sessions = session_order
+        .into_iter()
+        .filter_map(|pid| sessions_by_pid.remove(&pid).map(|(_, st)| st))
+        .collect();
 
     Ok(DaemonStatus {
         active_preset_id,

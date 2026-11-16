@@ -3,7 +3,8 @@ use std::sync::mpsc::Sender;
 use windows::core::{Interface, GUID};
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
-    IAudioSessionControl2, IAudioSessionManager2, IMMDevice, ISimpleAudioVolume,
+    AudioSessionStateActive, AudioSessionStateExpired, IAudioSessionControl2, IAudioSessionManager2,
+    IMMDevice, ISimpleAudioVolume,
 };
 use windows::Win32::System::Com::CLSCTX_ALL;
 
@@ -68,12 +69,21 @@ impl AudioEndpoint {
 
         for i in 0..count {
             let ctrl = unsafe { session_enum.GetSession(i)? };
+            let state = unsafe { ctrl.GetState()? };
+            if state == AudioSessionStateExpired {
+                continue;
+            }
             let ctrl2: IAudioSessionControl2 = ctrl.cast()?;
             let pid = unsafe { ctrl2.GetProcessId()? };
             let exe_name = resolve_process_exe_name(pid).unwrap_or_else(|| "<unknown>".to_string());
             let volume_ctl: ISimpleAudioVolume = ctrl.cast()?;
 
-            sessions.push(AudioSession::new(pid, exe_name, volume_ctl));
+            sessions.push(AudioSession::new(
+                pid,
+                exe_name,
+                state == AudioSessionStateActive,
+                volume_ctl,
+            ));
         }
         Ok(sessions)
     }

@@ -295,7 +295,7 @@ function renderAppsTab(sessions, endpoints) {
   syncKeyedList(
     document.getElementById("apps-list"),
     sessions,
-    (s) => `${s.endpoint_id}:${s.pid}`,
+    (s) => `app:${s.pid}`,
     "No active audio sessions.",
     buildAppCard,
     (card, s) => {

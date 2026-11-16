@@ -20,14 +20,21 @@ use crate::Result;
 pub struct AudioSession {
     pub pid: u32,
     pub exe_name: String,
+    pub is_active: bool,
     volume_ctl: ISimpleAudioVolume,
 }
 
 impl AudioSession {
-    pub(crate) fn new(pid: u32, exe_name: String, volume_ctl: ISimpleAudioVolume) -> Self {
+    pub(crate) fn new(
+        pid: u32,
+        exe_name: String,
+        is_active: bool,
+        volume_ctl: ISimpleAudioVolume,
+    ) -> Self {
         Self {
             pid,
             exe_name,
+            is_active,
             volume_ctl,
         }
     }
