@@ -473,6 +473,7 @@ fn handle_set_app_output_volume(
         return Ok(());
     }
 
+    let prev_primary_vol = primary_vol;
     if endpoint_id == cur_primary {
         primary_vol = vol;
     } else if let Some(lb) = guard.loopbacks.get_mut(&(pid, endpoint_id.to_string())) {
@@ -547,27 +548,17 @@ fn handle_set_app_output_volume(
         primary_vol
     };
 
-    if let Some(ep) = eps.iter().find(|e| e.id == cur_primary) {
-        if let Ok(sessions) = ep.sessions() {
-            for s in sessions {
-                if s.pid == pid {
-                    let _ = s.set_volume(primary_eff);
-                    let _ = s.set_mute(primary_eff <= 0.0);
-                }
-            }
+    if has_audible_loopback && endpoint_id == cur_primary && primary_eff < prev_primary_vol {
+        // Apply ISimpleAudioVolume immediately; never raise loopback gain mid-drag,
+        // and on finalize wait 100ms for Windows' mix buffer to flush before catching up.
+        apply_primary_volume(&eps, &cur_primary, pid, primary_eff);
+        if finalize {
+            thread::sleep(Duration::from_millis(150));
+            apply_loopback_ratios(&mut guard.loopbacks, pid, primary_eff);
         }
-    }
-
-    for ((p, _), lb) in guard.loopbacks.iter_mut() {
-        if *p == pid {
-            let ratio = if primary_eff > 0.0 {
-                (lb.volume / primary_eff).clamp(0.0, 4.0)
-            } else {
-                0.0
-            };
-            lb.handle.set_linear_gain(ratio.powi(2));
-            lb.handle.set_mute(lb.volume <= 0.0);
-        }
+    } else {
+        apply_primary_volume(&eps, &cur_primary, pid, primary_eff);
+        apply_loopback_ratios(&mut guard.loopbacks, pid, primary_eff);
     }
 
     let updated_secs: Vec<SecondaryOutputSetting> = guard
@@ -591,4 +582,40 @@ fn handle_set_app_output_volume(
     });
 
     Ok(())
+}
+
+fn apply_primary_volume(
+    eps: &[audio_core::AudioEndpoint],
+    cur_primary: &str,
+    pid: u32,
+    vol: f32,
+) {
+    if let Some(ep) = eps.iter().find(|e| e.id == cur_primary) {
+        if let Ok(sessions) = ep.sessions() {
+            for s in sessions {
+                if s.pid == pid {
+                    let _ = s.set_volume(vol);
+                    let _ = s.set_mute(vol <= 0.0);
+                }
+            }
+        }
+    }
+}
+
+fn apply_loopback_ratios(
+    loopbacks: &mut std::collections::HashMap<(u32, String), ActiveLoopback>,
+    pid: u32,
+    primary_eff: f32,
+) {
+    for ((p, _), lb) in loopbacks.iter_mut() {
+        if *p == pid {
+            let ratio = if primary_eff > 0.0 {
+                (lb.volume / primary_eff).clamp(0.0, 4.0)
+            } else {
+                0.0
+            };
+            lb.handle.set_linear_gain(ratio.powi(2));
+            lb.handle.set_mute(lb.volume <= 0.0);
+        }
+    }
 }
