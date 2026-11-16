@@ -105,6 +105,7 @@ fn collect_status(
                 muted: vol_state.muted,
                 is_default_multimedia: ep.id == *mm_id,
                 is_default_communications: ep.id == *comm_id,
+                hidden: false,
             });
 
             if flow == DataFlow::Render {
@@ -204,6 +205,9 @@ fn handle_request(
                 .unwrap_or((None, Vec::new(), AppSettingsStore::default()));
             match collect_status(enumerator, active_id) {
                 Ok(mut status) => {
+                    for ep in &mut status.endpoints {
+                        ep.hidden = app_settings_snapshot.hidden_endpoints.contains(&ep.id);
+                    }
                     for s in &mut status.sessions {
                         if let Some(key) = AppSettingsStore::key_for_pid(s.pid) {
                             if let Some(cfg) = app_settings_snapshot.apps.get(&key) {
@@ -576,6 +580,21 @@ fn handle_request(
             Ok(()) => (IpcResponse::Ok, false),
             Err(message) => (IpcResponse::Error { message }, false),
         },
+        IpcRequest::SetEndpointHidden {
+            endpoint_id,
+            hidden,
+        } => {
+            if let Ok(mut guard) = state.lock() {
+                if hidden {
+                    guard.app_settings.hidden_endpoints.insert(endpoint_id);
+                } else {
+                    guard.app_settings.hidden_endpoints.remove(&endpoint_id);
+                }
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.save(&path);
+            }
+            (IpcResponse::Ok, false)
+        }
     }
 }
 

@@ -198,6 +198,15 @@ fn set_app_output_volume(
     Ok(())
 }
 
+#[tauri::command]
+fn set_endpoint_hidden(endpoint_id: String, hidden: bool) -> Result<(), String> {
+    ipc_call(IpcRequest::SetEndpointHidden {
+        endpoint_id,
+        hidden,
+    })?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -281,6 +290,7 @@ fn main() {
             set_loopback_mute,
             stop_loopback,
             set_app_output_volume,
+            set_endpoint_hidden,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

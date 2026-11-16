@@ -2,7 +2,8 @@ const { invoke } = window.__TAURI__.core;
 
 let isDraggingSlider = false;
 let activeTab = "apps";
-const expandedAppPids = new Set();
+const collapsedActivePids = new Set();
+const expandedInactivePids = new Set();
 const rememberedOutputVolumes = new Map();
 let showInactiveApps = false;
 
@@ -145,6 +146,20 @@ function buildEndpointCard() {
   title.className = "card-title";
   const meta = document.createElement("div");
   meta.className = "card-meta";
+  const badgesSpan = document.createElement("span");
+  badgesSpan.className = "card-meta";
+  const eyeBtn = document.createElement("button");
+  eyeBtn.className = "btn-icon-eye";
+  eyeBtn.textContent = "👁️";
+  eyeBtn.onclick = async () => {
+    const ep = card._item;
+    await invoke("set_endpoint_hidden", {
+      endpointId: ep.id,
+      hidden: !ep.hidden,
+    });
+    await refreshAll(true);
+  };
+  meta.append(badgesSpan, eyeBtn);
   header.append(title, meta);
 
   const row = document.createElement("div");
@@ -192,12 +207,17 @@ function updateEndpointCard(card, ep) {
   card._item = ep;
   card.querySelector(".card-title").textContent = ep.friendly_name;
 
-  const meta = card.querySelector(".card-meta");
+  const meta = card.querySelector(".card-meta > span.card-meta");
   const badges = [];
   if (ep.is_default_multimedia) badges.push('<span class="badge-tag">Default</span>');
   if (ep.is_default_communications) badges.push('<span class="badge-tag">Comms</span>');
   const nextHtml = badges.join("");
   if (meta.innerHTML !== nextHtml) meta.innerHTML = nextHtml;
+
+  const eyeBtn = card.querySelector(".btn-icon-eye");
+  eyeBtn.style.display = ep.flow === "Render" ? "" : "none";
+  eyeBtn.classList.toggle("hidden-ep", Boolean(ep.hidden));
+  eyeBtn.title = ep.hidden ? "Show in Applications tab" : "Hide from Applications tab";
 
   const muteBtn = card.querySelector(".btn-mute");
   muteBtn.classList.toggle("muted", ep.muted);
@@ -270,12 +290,22 @@ function buildAppCard() {
   const toggleExpand = () => {
     const s = card._item;
     if (!s) return;
-    if (expandedAppPids.has(s.pid)) {
-      expandedAppPids.delete(s.pid);
+    if (s.is_active) {
+      if (collapsedActivePids.has(s.pid)) {
+        collapsedActivePids.delete(s.pid);
+      } else {
+        collapsedActivePids.add(s.pid);
+      }
     } else {
-      expandedAppPids.add(s.pid);
+      if (expandedInactivePids.has(s.pid)) {
+        expandedInactivePids.delete(s.pid);
+      } else {
+        expandedInactivePids.add(s.pid);
+      }
     }
-    const expanded = expandedAppPids.has(s.pid);
+    const expanded = s.is_active
+      ? !collapsedActivePids.has(s.pid)
+      : expandedInactivePids.has(s.pid);
     chevron.textContent = expanded ? "▾" : "▸";
     body.classList.toggle("collapsed", !expanded);
   };
@@ -470,14 +500,23 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
             ? "1 out"
             : `${activeCount} outs`;
 
-      const expanded = expandedAppPids.has(s.pid);
+      const expanded = s.is_active
+        ? !collapsedActivePids.has(s.pid)
+        : expandedInactivePids.has(s.pid);
       card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
       const body = card.querySelector(".routing-outputs");
       body.classList.toggle("collapsed", !expanded);
 
+      const visibleEndpoints = renderEndpoints.filter(
+        (ep) =>
+          !ep.hidden ||
+          ep.id === s.endpoint_id ||
+          activeLoopbacks.some((lb) => lb.target_endpoint_id === ep.id)
+      );
+
       syncKeyedList(
         body,
-        renderEndpoints,
+        visibleEndpoints,
         (ep) => ep.id,
         "No active output devices.",
         buildRoutingOutputRow,

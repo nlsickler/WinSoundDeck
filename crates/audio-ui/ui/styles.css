@@ -376,6 +376,18 @@ button:hover {
   flex-shrink: 0;
 }
 
+.btn-icon-eye {
+  min-width: 28px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.btn-icon-eye.hidden-ep {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
 .primary-slot {
   width: 20px;
   text-align: center;

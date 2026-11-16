@@ -82,6 +82,10 @@ pub enum IpcRequest {
         volume: f32,
         finalize: bool,
     },
+    SetEndpointHidden {
+        endpoint_id: String,
+        hidden: bool,
+    },
     Shutdown,
 }
 
@@ -94,6 +98,8 @@ pub struct EndpointStatus {
     pub muted: bool,
     pub is_default_multimedia: bool,
     pub is_default_communications: bool,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
