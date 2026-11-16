@@ -142,6 +142,45 @@ fn reset_app_route(pid: u32, flow: DataFlow) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn start_loopback(pid: u32, target_endpoint_id: String, volume: f32) -> Result<(), String> {
+    ipc_call(IpcRequest::StartLoopback {
+        pid,
+        target_endpoint_id,
+        volume,
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_loopback_volume(pid: u32, target_endpoint_id: String, volume: f32) -> Result<(), String> {
+    ipc_call(IpcRequest::SetLoopbackVolume {
+        pid,
+        target_endpoint_id,
+        volume,
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_loopback_mute(pid: u32, target_endpoint_id: String, muted: bool) -> Result<(), String> {
+    ipc_call(IpcRequest::SetLoopbackMute {
+        pid,
+        target_endpoint_id,
+        muted,
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_loopback(pid: u32, target_endpoint_id: String) -> Result<(), String> {
+    ipc_call(IpcRequest::StopLoopback {
+        pid,
+        target_endpoint_id,
+    })?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -216,6 +255,10 @@ fn main() {
             set_session_mute,
             route_app,
             reset_app_route,
+            start_loopback,
+            set_loopback_volume,
+            set_loopback_mute,
+            stop_loopback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

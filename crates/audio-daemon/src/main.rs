@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
@@ -5,16 +6,23 @@ use std::thread;
 use std::time::Duration;
 
 use audio_core::ipc::{
-    serve_named_pipe, DaemonStatus, EndpointStatus, IpcRequest, IpcResponse, PresetSummary,
-    SessionStatus, DEFAULT_PIPE_NAME,
+    serve_named_pipe, DaemonStatus, EndpointStatus, IpcRequest, IpcResponse, LoopbackStatus,
+    PresetSummary, SessionStatus, DEFAULT_PIPE_NAME,
 };
 use audio_core::{
     resolve_app_display_name, resolve_root_exe_name, AppPolicyClient, AudioEnumerator, AudioEvent,
-    ComGuard, DataFlow, DeviceRole, PresetConfig, PresetEngine,
+    ComGuard, DataFlow, DeviceRole, LoopbackHandle, LoopbackTee, PresetConfig, PresetEngine,
 };
+
+struct ActiveLoopback {
+    handle: LoopbackHandle,
+    volume: f32,
+    muted: bool,
+}
 
 struct DaemonState {
     config: PresetConfig,
+    loopbacks: HashMap<(u32, String), ActiveLoopback>,
     shutdown: bool,
 }
 
@@ -126,6 +134,7 @@ fn collect_status(
         active_preset_id,
         endpoints,
         sessions,
+        loopbacks: Vec::new(),
     })
 }
 
@@ -143,12 +152,27 @@ fn handle_request(
             (IpcResponse::Ok, true)
         }
         IpcRequest::GetStatus => {
-            let active_id = state
+            let (active_id, loopbacks) = state
                 .lock()
-                .ok()
-                .and_then(|g| g.config.active_preset_id.clone());
+                .map(|g| {
+                    let lbs = g
+                        .loopbacks
+                        .iter()
+                        .map(|((pid, ep_id), lb)| LoopbackStatus {
+                            pid: *pid,
+                            target_endpoint_id: ep_id.clone(),
+                            volume: lb.volume,
+                            muted: lb.muted,
+                        })
+                        .collect();
+                    (g.config.active_preset_id.clone(), lbs)
+                })
+                .unwrap_or((None, Vec::new()));
             match collect_status(enumerator, active_id) {
-                Ok(status) => (IpcResponse::Status(status), false),
+                Ok(mut status) => {
+                    status.loopbacks = loopbacks;
+                    (IpcResponse::Status(status), false)
+                }
                 Err(e) => (
                     IpcResponse::Error {
                         message: e.to_string(),
@@ -334,6 +358,75 @@ fn handle_request(
                 ),
             }
         }
+        IpcRequest::StartLoopback {
+            pid,
+            target_endpoint_id,
+            volume,
+        } => {
+            let vol = volume.clamp(0.0, 1.0);
+            let res = enumerator
+                .list_active_endpoints(DataFlow::Render)
+                .map_err(|e| e.to_string())
+                .and_then(|eps| {
+                    let ep = eps
+                        .into_iter()
+                        .find(|e| e.id == target_endpoint_id)
+                        .ok_or_else(|| format!("Endpoint '{target_endpoint_id}' not found"))?;
+                    LoopbackTee::start(pid, &ep, vol).map_err(|e| e.to_string())
+                });
+            match res {
+                Ok(handle) => {
+                    if let Ok(mut guard) = state.lock() {
+                        guard.loopbacks.insert(
+                            (pid, target_endpoint_id),
+                            ActiveLoopback {
+                                handle,
+                                volume: vol,
+                                muted: false,
+                            },
+                        );
+                    }
+                    (IpcResponse::Ok, false)
+                }
+                Err(message) => (IpcResponse::Error { message }, false),
+            }
+        }
+        IpcRequest::SetLoopbackVolume {
+            pid,
+            target_endpoint_id,
+            volume,
+        } => {
+            let vol = volume.clamp(0.0, 1.0);
+            if let Ok(mut guard) = state.lock() {
+                if let Some(lb) = guard.loopbacks.get_mut(&(pid, target_endpoint_id)) {
+                    lb.volume = vol;
+                    lb.handle.set_volume(vol);
+                }
+            }
+            (IpcResponse::Ok, false)
+        }
+        IpcRequest::SetLoopbackMute {
+            pid,
+            target_endpoint_id,
+            muted,
+        } => {
+            if let Ok(mut guard) = state.lock() {
+                if let Some(lb) = guard.loopbacks.get_mut(&(pid, target_endpoint_id)) {
+                    lb.muted = muted;
+                    lb.handle.set_mute(muted);
+                }
+            }
+            (IpcResponse::Ok, false)
+        }
+        IpcRequest::StopLoopback {
+            pid,
+            target_endpoint_id,
+        } => {
+            if let Ok(mut guard) = state.lock() {
+                guard.loopbacks.remove(&(pid, target_endpoint_id));
+            }
+            (IpcResponse::Ok, false)
+        }
     }
 }
 
@@ -421,6 +514,7 @@ fn main() {
 
     let state = Arc::new(Mutex::new(DaemonState {
         config,
+        loopbacks: HashMap::new(),
         shutdown: false,
     }));
     let watcher = spawn_event_watcher(Arc::clone(&state));

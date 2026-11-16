@@ -267,27 +267,67 @@ button:hover {
   color: #fff;
 }
 
-.routing-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.routing-header {
+  cursor: pointer;
 }
 
-.routing-label {
+.routing-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chevron {
   font-size: 11px;
   color: var(--muted);
+  width: 12px;
+  text-align: center;
   flex-shrink: 0;
 }
 
-select {
-  flex: 1;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
+.routing-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.routing-outputs.collapsed {
+  display: none;
+}
+
+.routing-output-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
   border-radius: 6px;
-  padding: 5px 8px;
+  background: var(--panel);
+}
+
+.routing-output-row.disabled {
+  opacity: 0.55;
+}
+
+.routing-output-row input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.routing-output-name {
+  width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
+  flex-shrink: 0;
+}
+
+.routing-output-row input[type="range"]:disabled {
+  cursor: default;
 }
 
 .empty-note {

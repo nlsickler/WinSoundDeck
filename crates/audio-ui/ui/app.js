@@ -2,6 +2,7 @@ const { invoke } = window.__TAURI__.core;
 
 let isDraggingSlider = false;
 let activeTab = "apps";
+const expandedRoutingPids = new Set();
 
 function pct(vol) {
   return Math.round(Math.max(0, Math.min(1, vol)) * 100);
@@ -98,7 +99,7 @@ async function refreshAll(force = false) {
     renderPresets(presetData);
     renderAppsTab(appSessions, status.endpoints);
     renderIOTab(status.endpoints);
-    renderRoutingTab(appSessions, status.endpoints);
+    renderRoutingTab(appSessions, status.endpoints, status.loopbacks || []);
 
     document.getElementById("count-apps").textContent = String(appSessions.length);
     document.getElementById("count-io").textContent = String(status.endpoints.length);
@@ -323,46 +324,140 @@ function buildRoutingCard() {
   card.className = "card";
 
   const header = document.createElement("div");
-  header.className = "card-header";
+  header.className = "card-header routing-header";
+
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "routing-title-wrap";
+  const chevron = document.createElement("span");
+  chevron.className = "chevron";
   const title = document.createElement("span");
   title.className = "card-title";
+  titleWrap.append(chevron, title);
+
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+  const outCountBadge = document.createElement("span");
+  outCountBadge.className = "badge-muted";
   const pidBadge = document.createElement("span");
   pidBadge.className = "badge-tag";
-  header.append(title, pidBadge);
+  meta.append(outCountBadge, pidBadge);
 
-  const row = document.createElement("div");
-  row.className = "routing-row";
-  const lbl = document.createElement("span");
-  lbl.className = "routing-label";
-  lbl.textContent = "Output";
-  const select = document.createElement("select");
-  row.append(lbl, select);
+  header.append(titleWrap, meta);
 
-  card.append(header, row);
+  const body = document.createElement("div");
+  body.className = "routing-outputs";
 
-  select.onchange = async (e) => {
+  card.append(header, body);
+
+  header.onclick = () => {
     const s = card._item;
-    const val = e.target.value;
-    select.blur();
-    if (val === "__reset__") {
-      await invoke("reset_app_route", { pid: s.pid, flow: "Render" });
+    if (!s) return;
+    if (expandedRoutingPids.has(s.pid)) {
+      expandedRoutingPids.delete(s.pid);
     } else {
-      await invoke("route_app", { pid: s.pid, flow: "Render", endpointId: val });
+      expandedRoutingPids.add(s.pid);
     }
-    await refreshAll(true);
+    const expanded = expandedRoutingPids.has(s.pid);
+    chevron.textContent = expanded ? "▾" : "▸";
+    body.classList.toggle("collapsed", !expanded);
   };
 
   return card;
 }
 
-function renderRoutingTab(sessions, endpoints) {
+function buildRoutingOutputRow() {
+  const row = document.createElement("div");
+  row.className = "routing-output-row";
+
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+
+  const name = document.createElement("span");
+  name.className = "routing-output-name";
+
+  const primaryTag = document.createElement("span");
+  primaryTag.className = "badge-tag";
+  primaryTag.textContent = "Primary";
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "0";
+  slider.max = "100";
+
+  const label = document.createElement("span");
+  label.className = "vol-label";
+
+  row.append(cb, name, primaryTag, slider, label);
+
+  cb.onchange = async () => {
+    const ctx = row._ctx;
+    if (!ctx) return;
+    const { session, endpoint, isPrimary, isLoopback, activeLoopbacks } = ctx;
+    if (isPrimary) {
+      // Unchecking primary promotes the first active secondary loopback to primary.
+      const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
+      if (!fallback) {
+        cb.checked = true;
+        return;
+      }
+      await invoke("stop_loopback", {
+        pid: session.pid,
+        targetEndpointId: fallback.target_endpoint_id,
+      });
+      await invoke("route_app", {
+        pid: session.pid,
+        flow: "Render",
+        endpointId: fallback.target_endpoint_id,
+      });
+    } else if (cb.checked && !isLoopback) {
+      await invoke("start_loopback", {
+        pid: session.pid,
+        targetEndpointId: endpoint.id,
+        volume: 0.5,
+      });
+    } else if (!cb.checked && isLoopback) {
+      await invoke("stop_loopback", {
+        pid: session.pid,
+        targetEndpointId: endpoint.id,
+      });
+    }
+    await refreshAll(true);
+  };
+
+  slider.onpointerdown = () => { isDraggingSlider = true; };
+  slider.onpointerup = () => { isDraggingSlider = false; };
+  slider.onpointercancel = () => { isDraggingSlider = false; };
+  slider.oninput = async (e) => {
+    const ctx = row._ctx;
+    if (!ctx) return;
+    const { session, endpoint, isPrimary, isLoopback } = ctx;
+    const v = Number(e.target.value) / 100;
+    label.textContent = `${e.target.value}%`;
+    if (isPrimary) {
+      await invoke("set_session_volume", {
+        endpointId: session.endpoint_id,
+        pid: session.pid,
+        volume: v,
+      });
+    } else if (isLoopback) {
+      await invoke("set_loopback_volume", {
+        pid: session.pid,
+        targetEndpointId: endpoint.id,
+        volume: v,
+      });
+    }
+  };
+
+  return row;
+}
+
+function renderRoutingTab(sessions, endpoints, loopbacks) {
   const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
-  const epSignature = renderEndpoints.map((e) => `${e.id}:${e.friendly_name}`).join("|");
 
   syncKeyedList(
     document.getElementById("routing-list"),
     sessions,
-    (s) => `route:${s.pid}:${s.endpoint_id}`,
+    (s) => `route:${s.pid}`,
     "No active audio sessions to route.",
     buildRoutingCard,
     (card, s) => {
@@ -371,25 +466,53 @@ function renderRoutingTab(sessions, endpoints) {
       card.querySelector(".card-title").textContent = name;
       card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
 
-      const select = card.querySelector("select");
-      if (document.activeElement !== select && select.dataset.epSig !== epSignature) {
-        select.innerHTML = "";
-        const defaultOpt = document.createElement("option");
-        defaultOpt.value = "__reset__";
-        defaultOpt.textContent = "Reset to OS Default";
-        select.appendChild(defaultOpt);
-        for (const ep of renderEndpoints) {
-          const opt = document.createElement("option");
-          opt.value = ep.id;
-          opt.textContent = ep.friendly_name;
-          select.appendChild(opt);
-        }
-        select.dataset.epSig = epSignature;
-      }
+      const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
+      const activeCount = 1 + activeLoopbacks.length;
+      card.querySelector(".badge-muted").textContent =
+        activeCount === 1 ? "1 output" : `${activeCount} outputs`;
 
-      if (document.activeElement !== select && select.value !== s.endpoint_id) {
-        select.value = s.endpoint_id;
-      }
+      const expanded = expandedRoutingPids.has(s.pid);
+      card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
+      const body = card.querySelector(".routing-outputs");
+      body.classList.toggle("collapsed", !expanded);
+
+      syncKeyedList(
+        body,
+        renderEndpoints,
+        (ep) => ep.id,
+        "No active output devices.",
+        buildRoutingOutputRow,
+        (row, ep) => {
+          const isPrimary = ep.id === s.endpoint_id;
+          const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
+          const isLoopback = Boolean(lb);
+          const enabled = isPrimary || isLoopback;
+
+          row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
+          row.classList.toggle("disabled", !enabled);
+
+          const cb = row.querySelector('input[type="checkbox"]');
+          cb.checked = enabled;
+
+          const nameEl = row.querySelector(".routing-output-name");
+          nameEl.textContent = ep.friendly_name;
+          nameEl.title = ep.friendly_name;
+
+          const primaryTag = row.querySelector(".badge-tag");
+          primaryTag.style.display = isPrimary ? "" : "none";
+
+          const slider = row.querySelector('input[type="range"]');
+          const label = row.querySelector(".vol-label");
+          slider.disabled = !enabled;
+
+          const vol = isPrimary ? s.volume : isLoopback ? lb.volume : 0.5;
+          const pctVal = pct(vol);
+          if (!isDraggingSlider && Number(slider.value) !== pctVal) {
+            slider.value = String(pctVal);
+          }
+          label.textContent = enabled ? `${pctVal}%` : "--";
+        }
+      );
     }
   );
 }

@@ -53,6 +53,25 @@ pub enum IpcRequest {
         pid: u32,
         flow: DataFlow,
     },
+    StartLoopback {
+        pid: u32,
+        target_endpoint_id: String,
+        volume: f32,
+    },
+    SetLoopbackVolume {
+        pid: u32,
+        target_endpoint_id: String,
+        volume: f32,
+    },
+    SetLoopbackMute {
+        pid: u32,
+        target_endpoint_id: String,
+        muted: bool,
+    },
+    StopLoopback {
+        pid: u32,
+        target_endpoint_id: String,
+    },
     Shutdown,
 }
 
@@ -80,10 +99,20 @@ pub struct SessionStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopbackStatus {
+    pub pid: u32,
+    pub target_endpoint_id: String,
+    pub volume: f32,
+    pub muted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonStatus {
     pub active_preset_id: Option<String>,
     pub endpoints: Vec<EndpointStatus>,
     pub sessions: Vec<SessionStatus>,
+    #[serde(default)]
+    pub loopbacks: Vec<LoopbackStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
