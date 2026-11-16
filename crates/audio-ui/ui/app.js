@@ -93,14 +93,16 @@ async function refreshAll(force = false) {
     badge.textContent = "Daemon Connected";
     badge.className = "badge badge-ok";
 
-    renderPresets(presetData);
-    renderAppsTab(status.sessions, status.endpoints);
-    renderIOTab(status.endpoints);
-    renderRoutingTab(status.sessions, status.endpoints);
+    const appSessions = status.sessions.filter((s) => s.pid !== 0);
 
-    document.getElementById("count-apps").textContent = String(status.sessions.length);
+    renderPresets(presetData);
+    renderAppsTab(appSessions, status.endpoints);
+    renderIOTab(status.endpoints);
+    renderRoutingTab(appSessions, status.endpoints);
+
+    document.getElementById("count-apps").textContent = String(appSessions.length);
     document.getElementById("count-io").textContent = String(status.endpoints.length);
-    document.getElementById("count-routing").textContent = String(status.sessions.length);
+    document.getElementById("count-routing").textContent = String(appSessions.length);
   } catch (err) {
     badge.textContent = "Daemon Offline";
     badge.className = "badge badge-offline";
