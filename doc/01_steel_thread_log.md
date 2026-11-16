@@ -108,8 +108,20 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
 
 ## Upcoming Validation Plan
 
-### Step 7: Background Daemon, Named Pipe IPC & Tauri Tray UI
-* **Goal:** Decouple the headless engine from the visual controller.
+### Step 7: Simultaneous Multi-Output Audio (Architecture & Spike)
+* **Goal:** Validate how to route a single application (e.g., Spotify or Vivaldi) to multiple physical outputs simultaneously with independent volume/mute settings.
+* **Key Gap:** `IAudioPolicyConfigFactory` only routes an app to *one* endpoint at a time. Simultaneous multi-output requires evaluating:
+  * **Option A (WASAPI Process Loopback + Render Tee):** Capture an app's audio stream in user mode via Windows 10/11 Process Loopback (`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`) and render it to secondary endpoint(s) with independent gain—no kernel driver needed, though introduces a small software buffer (~10–20 ms) on the secondary output.
+  * **Option B (Explicit Scope Exclusion):** Keep the zero-latency pure-policy architecture (`00_high_level_spec.md`) and switch an app *between* endpoints rather than duplicating to two simultaneously.
+
+### Step 8: Single-App Route Reset (`AppPolicyClient`)
+* **Goal:** Validate resetting a single application's persisted endpoint override back to the Windows OS default without calling `ClearAllPersistedApplicationDefaultEndpoints` (which wipes all other apps' routes).
+
+### Step 9: Background Daemon, Named Pipe IPC & Hot-Plug Re-Enforcement
+* **Goal:** Decouple the headless engine from the UI and enforce presets continuously.
 * **Test Plan:**
-  * Run the core engine as a lightweight background daemon (<15 MB RAM target) exposing control/status over Windows Named Pipes.
-  * Build the Tauri system tray & mixer UI client on top of the Named Pipe protocol.
+  * Run the core engine as a lightweight background daemon (<15 MB RAM target) exposing control/status over Windows Named Pipes (`\\.\pipe\audio-mixer-daemon`).
+  * Wire `DeviceStateChanged` / `DeviceAdded` events to automatically re-apply active preset rules when a headset or DAC reconnects.
+
+### Step 10: Tauri System Tray & Mixer UI
+* **Goal:** Build the lightweight system tray & active mixer UI client on top of the Named Pipe IPC protocol.
