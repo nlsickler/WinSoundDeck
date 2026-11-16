@@ -15,25 +15,41 @@
     <button id="refresh-btn" class="btn-secondary" title="Refresh">Refresh</button>
   </header>
 
+  <section class="presets-bar" id="presets-section">
+    <span class="presets-label">Presets</span>
+    <div id="presets-list" class="presets-row"></div>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="apps" role="tab" aria-selected="true">
+      Applications <span id="count-apps" class="tab-count">0</span>
+    </button>
+    <button class="tab-btn" data-tab="io" role="tab" aria-selected="false">
+      I/O <span id="count-io" class="tab-count">0</span>
+    </button>
+    <button class="tab-btn" data-tab="routing" role="tab" aria-selected="false">
+      Routing <span id="count-routing" class="tab-count">0</span>
+    </button>
+  </nav>
+
   <main class="container">
-    <section class="panel" id="presets-section">
-      <h2>Presets</h2>
-      <div id="presets-list" class="presets-row"></div>
+    <section class="tab-panel active" id="tab-apps" role="tabpanel">
+      <div id="apps-list" class="card-list"></div>
     </section>
 
-    <section class="panel">
-      <h2>Outputs</h2>
-      <div id="outputs-list" class="card-list"></div>
+    <section class="tab-panel" id="tab-io" role="tabpanel">
+      <div class="io-group">
+        <h2>Outputs</h2>
+        <div id="outputs-list" class="card-list"></div>
+      </div>
+      <div class="io-group">
+        <h2>Inputs</h2>
+        <div id="inputs-list" class="card-list"></div>
+      </div>
     </section>
 
-    <section class="panel">
-      <h2>Inputs</h2>
-      <div id="inputs-list" class="card-list"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Active Apps</h2>
-      <div id="sessions-list" class="card-list"></div>
+    <section class="tab-panel" id="tab-routing" role="tabpanel">
+      <div id="routing-list" class="card-list"></div>
     </section>
   </main>
 
