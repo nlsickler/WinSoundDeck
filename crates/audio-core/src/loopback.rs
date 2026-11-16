@@ -3,13 +3,13 @@ use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use windows::core::{implement, Interface, HRESULT, HSTRING, PROPVARIANT};
+use windows::core::{implement, Interface, GUID, HRESULT, HSTRING, PROPVARIANT};
 use windows::Win32::Foundation::{CloseHandle, E_POINTER, HANDLE};
 use windows::Win32::Media::Audio::{
     ActivateAudioInterfaceAsync, IActivateAudioInterfaceAsyncOperation,
     IActivateAudioInterfaceCompletionHandler, IActivateAudioInterfaceCompletionHandler_Impl,
-    IAudioCaptureClient, IAudioClient, IAudioRenderClient, IMMDeviceEnumerator, MMDeviceEnumerator,
-    AUDIOCLIENT_ACTIVATION_PARAMS, AUDIOCLIENT_ACTIVATION_PARAMS_0,
+    IAudioCaptureClient, IAudioClient, IAudioRenderClient, IMMDeviceEnumerator, ISimpleAudioVolume,
+    MMDeviceEnumerator, AUDIOCLIENT_ACTIVATION_PARAMS, AUDIOCLIENT_ACTIVATION_PARAMS_0,
     AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK, AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS,
     AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
     AUDCLNT_STREAMFLAGS_LOOPBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
@@ -306,6 +306,12 @@ fn setup_loopback_clients(
     }
     let render_buf_frames = unsafe { render_client.GetBufferSize()? };
     let renderer: IAudioRenderClient = unsafe { render_client.GetService()? };
+
+    // Ensure Windows hasn't persisted a mute/0% volume on this process's own loopback render session.
+    if let Ok(own_vol) = unsafe { render_client.GetService::<ISimpleAudioVolume>() } {
+        let _ = unsafe { own_vol.SetMasterVolume(1.0, &GUID::zeroed()) };
+        let _ = unsafe { own_vol.SetMute(false, &GUID::zeroed()) };
+    }
 
     unsafe {
         capture_client.Start()?;
