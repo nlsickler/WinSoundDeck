@@ -88,6 +88,15 @@ impl LoopbackHandle {
             .store(linear.to_bits(), Ordering::Relaxed);
     }
 
+    /// Sets a direct linear gain multiplier (clamped `0.0..=16.0`), used when compensating
+    /// for primary session attenuation (`(secondary / primary)^2`).
+    pub fn set_linear_gain(&self, linear: f32) {
+        let clamped = linear.clamp(0.0, 16.0);
+        self.state
+            .gain_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
     /// Mutes or unmutes the secondary loopback output without affecting the primary stream.
     pub fn set_mute(&self, muted: bool) {
         self.state.muted.store(muted, Ordering::Relaxed);

@@ -75,6 +75,12 @@ pub enum IpcRequest {
         pid: u32,
         target_endpoint_id: String,
     },
+    SetAppOutputVolume {
+        pid: u32,
+        endpoint_id: String,
+        volume: f32,
+        finalize: bool,
+    },
     Shutdown,
 }
 

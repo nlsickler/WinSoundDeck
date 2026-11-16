@@ -240,23 +240,16 @@ function buildAppCard() {
 
   const titleToggle = document.createElement("div");
   titleToggle.className = "app-title-toggle";
+  titleToggle.style.flex = "1";
+  titleToggle.style.maxWidth = "none";
   const chevron = document.createElement("span");
   chevron.className = "chevron";
   const title = document.createElement("span");
   title.className = "card-title";
   titleToggle.append(chevron, title);
 
-  const inlineControls = document.createElement("div");
-  inlineControls.className = "app-inline-controls";
   const muteBtn = document.createElement("button");
   muteBtn.className = "btn-icon-mute";
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = "0";
-  slider.max = "100";
-  const label = document.createElement("span");
-  label.className = "vol-label";
-  inlineControls.append(muteBtn, slider, label);
 
   const meta = document.createElement("div");
   meta.className = "card-meta";
@@ -266,7 +259,7 @@ function buildAppCard() {
   pidBadge.className = "badge-tag";
   meta.append(outCountBadge, pidBadge);
 
-  header.append(titleToggle, inlineControls, meta);
+  header.append(titleToggle, muteBtn, meta);
 
   const body = document.createElement("div");
   body.className = "routing-outputs";
@@ -297,20 +290,6 @@ function buildAppCard() {
       muted: !s.muted,
     });
     await refreshAll(true);
-  };
-
-  slider.onpointerdown = () => { isDraggingSlider = true; };
-  slider.onpointerup = () => { isDraggingSlider = false; };
-  slider.onpointercancel = () => { isDraggingSlider = false; };
-  slider.oninput = async (e) => {
-    const s = card._item;
-    const v = Number(e.target.value) / 100;
-    label.textContent = `${e.target.value}%`;
-    await invoke("set_session_volume", {
-      endpointId: s.endpoint_id,
-      pid: s.pid,
-      volume: v,
-    });
   };
 
   return card;
@@ -402,27 +381,33 @@ function buildRoutingOutputRow() {
   };
 
   slider.onpointerdown = () => { isDraggingSlider = true; };
-  slider.onpointerup = () => { isDraggingSlider = false; };
   slider.onpointercancel = () => { isDraggingSlider = false; };
   slider.oninput = async (e) => {
     const ctx = row._ctx;
     if (!ctx) return;
-    const { session, endpoint, isPrimary, isLoopback } = ctx;
+    const { session, endpoint } = ctx;
     const v = Number(e.target.value) / 100;
     label.textContent = `${e.target.value}%`;
-    if (isPrimary) {
-      await invoke("set_session_volume", {
-        endpointId: session.endpoint_id,
-        pid: session.pid,
-        volume: v,
-      });
-    } else if (isLoopback) {
-      await invoke("set_loopback_volume", {
-        pid: session.pid,
-        targetEndpointId: endpoint.id,
-        volume: v,
-      });
-    }
+    await invoke("set_app_output_volume", {
+      pid: session.pid,
+      endpointId: endpoint.id,
+      volume: v,
+      finalize: false,
+    });
+  };
+  slider.onpointerup = async (e) => {
+    isDraggingSlider = false;
+    const ctx = row._ctx;
+    if (!ctx) return;
+    const { session, endpoint } = ctx;
+    const v = Number(e.target.value) / 100;
+    await invoke("set_app_output_volume", {
+      pid: session.pid,
+      endpointId: endpoint.id,
+      volume: v,
+      finalize: true,
+    });
+    await refreshAll(true);
   };
 
   return row;
@@ -448,13 +433,6 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
       muteBtn.classList.toggle("muted", s.muted);
       muteBtn.textContent = s.muted ? "🔇" : "🔉";
       muteBtn.title = s.muted ? "Unmute" : "Mute";
-
-      const headerPct = pct(s.volume);
-      const headerSlider = card.querySelector('.app-inline-controls input[type="range"]');
-      if (!isDraggingSlider && Number(headerSlider.value) !== headerPct) {
-        headerSlider.value = String(headerPct);
-      }
-      card.querySelector(".app-inline-controls .vol-label").textContent = `${headerPct}%`;
 
       const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
       const activeCount = (!s.muted ? 1 : 0) + activeLoopbacks.length;

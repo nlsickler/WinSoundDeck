@@ -543,7 +543,162 @@ fn handle_request(
             }
             (IpcResponse::Ok, false)
         }
+        IpcRequest::SetAppOutputVolume {
+            pid,
+            endpoint_id,
+            volume,
+            finalize,
+        } => match handle_set_app_output_volume(enumerator, state, pid, &endpoint_id, volume, finalize) {
+            Ok(()) => (IpcResponse::Ok, false),
+            Err(message) => (IpcResponse::Error { message }, false),
+        },
     }
+}
+
+fn handle_set_app_output_volume(
+    enumerator: &AudioEnumerator,
+    state: &Arc<Mutex<DaemonState>>,
+    pid: u32,
+    endpoint_id: &str,
+    volume: f32,
+    finalize: bool,
+) -> std::result::Result<(), String> {
+    let vol = volume.clamp(0.0, 1.0);
+    let eps = enumerator
+        .list_active_endpoints(DataFlow::Render)
+        .map_err(|e| e.to_string())?;
+
+    // Find current primary endpoint and its session volume.
+    let mut primary_ep_id: Option<String> = None;
+    let mut primary_vol: f32 = 1.0;
+    for ep in &eps {
+        if let Ok(sessions) = ep.sessions() {
+            if let Some(s) = sessions.into_iter().find(|s| s.pid == pid) {
+                primary_ep_id = Some(ep.id.clone());
+                primary_vol = s.volume().unwrap_or(1.0);
+                break;
+            }
+        }
+    }
+    let Some(mut cur_primary) = primary_ep_id else {
+        return Ok(());
+    };
+
+    let mut guard = state.lock().map_err(|e| e.to_string())?;
+
+    if endpoint_id == cur_primary {
+        primary_vol = vol;
+    } else if let Some(lb) = guard.loopbacks.get_mut(&(pid, endpoint_id.to_string())) {
+        lb.volume = vol;
+        lb.muted = vol <= 0.0;
+    }
+
+    // Collect all enabled outputs for this PID.
+    let secondary_vols: Vec<(String, f32)> = guard
+        .loopbacks
+        .iter()
+        .filter(|((p, _), _)| *p == pid)
+        .map(|((_, ep_id), lb)| (ep_id.clone(), lb.volume))
+        .collect();
+
+    // On finalize (pointerup), promote the loudest enabled output to Primary if strictly louder.
+    if finalize && !secondary_vols.is_empty() {
+        let mut best_id = cur_primary.clone();
+        let mut best_vol = primary_vol;
+        for (ep_id, v) in &secondary_vols {
+            if *v > best_vol + 0.005 {
+                best_vol = *v;
+                best_id = ep_id.clone();
+            }
+        }
+        if best_id != cur_primary {
+            let old_primary = cur_primary.clone();
+            let old_primary_vol = primary_vol;
+
+            guard.loopbacks.remove(&(pid, best_id.clone()));
+            if let Ok(ap) = AppPolicyClient::new() {
+                let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, &best_id);
+                let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, &best_id);
+            }
+            // Release lock briefly while Windows migrates the stream, then re-lock.
+            drop(guard);
+            thread::sleep(Duration::from_millis(200));
+            guard = state.lock().map_err(|e| e.to_string())?;
+
+            cur_primary = best_id;
+            primary_vol = best_vol;
+
+            if let Some(old_ep) = eps.iter().find(|e| e.id == old_primary) {
+                if let Ok(handle) = LoopbackTee::start(pid, old_ep, old_primary_vol) {
+                    let ratio = if primary_vol > 0.0 {
+                        (old_primary_vol / primary_vol).clamp(0.0, 4.0)
+                    } else {
+                        0.0
+                    };
+                    handle.set_linear_gain(ratio.powi(2));
+                    handle.set_mute(old_primary_vol <= 0.0);
+                    guard.loopbacks.insert(
+                        (pid, old_primary),
+                        ActiveLoopback {
+                            handle,
+                            volume: old_primary_vol,
+                            muted: old_primary_vol <= 0.0,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    let has_loopbacks = guard.loopbacks.keys().any(|(p, _)| *p == pid);
+    let primary_eff = if has_loopbacks && !finalize && primary_vol < 0.05 {
+        0.05
+    } else {
+        primary_vol
+    };
+
+    if let Some(ep) = eps.iter().find(|e| e.id == cur_primary) {
+        if let Ok(sessions) = ep.sessions() {
+            for s in sessions {
+                if s.pid == pid {
+                    let _ = s.set_volume(primary_eff);
+                    let _ = s.set_mute(primary_eff <= 0.0);
+                }
+            }
+        }
+    }
+
+    for ((p, _), lb) in guard.loopbacks.iter_mut() {
+        if *p == pid {
+            let ratio = if primary_eff > 0.0 {
+                (lb.volume / primary_eff).clamp(0.0, 4.0)
+            } else {
+                0.0
+            };
+            lb.handle.set_linear_gain(ratio.powi(2));
+            lb.handle.set_mute(lb.volume <= 0.0);
+        }
+    }
+
+    let updated_secs: Vec<SecondaryOutputSetting> = guard
+        .loopbacks
+        .iter()
+        .filter(|((p, _), _)| *p == pid)
+        .map(|((_, ep_id), lb)| SecondaryOutputSetting {
+            endpoint_id: ep_id.clone(),
+            volume: lb.volume,
+            muted: lb.muted,
+        })
+        .collect();
+    let path = guard.app_settings_path.clone();
+    guard.app_settings.upsert_for_pid(pid, &path, |s| {
+        s.primary_endpoint_id = Some(cur_primary);
+        s.volume = Some(primary_vol);
+        s.muted = Some(primary_vol <= 0.0);
+        s.secondary_outputs = updated_secs;
+    });
+
+    Ok(())
 }
 
 fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle<()> {

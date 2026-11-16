@@ -182,6 +182,22 @@ fn stop_loopback(pid: u32, target_endpoint_id: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn set_app_output_volume(
+    pid: u32,
+    endpoint_id: String,
+    volume: f32,
+    finalize: bool,
+) -> Result<(), String> {
+    ipc_call(IpcRequest::SetAppOutputVolume {
+        pid,
+        endpoint_id,
+        volume,
+        finalize,
+    })?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -264,6 +280,7 @@ fn main() {
             set_loopback_volume,
             set_loopback_mute,
             stop_loopback,
+            set_app_output_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
