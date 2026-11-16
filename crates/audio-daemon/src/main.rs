@@ -444,15 +444,9 @@ fn handle_request(
                 .list_active_endpoints(DataFlow::Render)
                 .map_err(|e| e.to_string())
                 .and_then(|eps| {
-                    let mut primary_vol = 1.0f32;
-                    for ep in &eps {
-                        if let Ok(sessions) = ep.sessions() {
-                            if let Some(s) = sessions.into_iter().find(|s| s.pid == pid) {
-                                primary_vol = s.volume().unwrap_or(1.0);
-                                break;
-                            }
-                        }
-                    }
+                    let primary_vol = find_primary_session(&eps, pid)
+                        .map(|(_, v)| v)
+                        .unwrap_or(1.0);
                     let ep = eps
                         .into_iter()
                         .find(|e| e.id == target_endpoint_id)
@@ -581,6 +575,26 @@ fn handle_request(
     }
 }
 
+fn find_primary_session(eps: &[audio_core::AudioEndpoint], pid: u32) -> Option<(String, f32)> {
+    let mut fallback: Option<(String, f32)> = None;
+    for ep in eps {
+        if let Ok(sessions) = ep.sessions() {
+            for s in sessions {
+                if s.pid == pid {
+                    let vol = s.volume().unwrap_or(1.0);
+                    if s.is_active {
+                        return Some((ep.id.clone(), vol));
+                    }
+                    if fallback.is_none() {
+                        fallback = Some((ep.id.clone(), vol));
+                    }
+                }
+            }
+        }
+    }
+    fallback
+}
+
 fn handle_set_app_output_volume(
     enumerator: &AudioEnumerator,
     state: &Arc<Mutex<DaemonState>>,
@@ -594,19 +608,7 @@ fn handle_set_app_output_volume(
         .list_active_endpoints(DataFlow::Render)
         .map_err(|e| e.to_string())?;
 
-    // Find current primary endpoint and its session volume.
-    let mut primary_ep_id: Option<String> = None;
-    let mut primary_vol: f32 = 1.0;
-    for ep in &eps {
-        if let Ok(sessions) = ep.sessions() {
-            if let Some(s) = sessions.into_iter().find(|s| s.pid == pid) {
-                primary_ep_id = Some(ep.id.clone());
-                primary_vol = s.volume().unwrap_or(1.0);
-                break;
-            }
-        }
-    }
-    let Some(mut cur_primary) = primary_ep_id else {
+    let Some((mut cur_primary, mut primary_vol)) = find_primary_session(&eps, pid) else {
         return Ok(());
     };
 
