@@ -444,9 +444,13 @@ fn handle_request(
                 .list_active_endpoints(DataFlow::Render)
                 .map_err(|e| e.to_string())
                 .and_then(|eps| {
-                    let primary_vol = find_primary_session(&eps, pid)
-                        .map(|(_, v)| v)
-                        .unwrap_or(1.0);
+                    let primary = find_primary_session(&eps, pid);
+                    if let Some((ref cur_primary, _)) = primary {
+                        if cur_primary == &target_endpoint_id {
+                            return Err("Endpoint is already the primary output".to_string());
+                        }
+                    }
+                    let primary_vol = primary.map(|(_, v)| v).unwrap_or(1.0);
                     let ep = eps
                         .into_iter()
                         .find(|e| e.id == target_endpoint_id)
@@ -644,43 +648,49 @@ fn handle_set_app_output_volume(
             let old_primary = cur_primary.clone();
             let old_primary_vol = primary_vol;
 
-            guard.loopbacks.remove(&(pid, best_id.clone()));
             if let Ok(ap) = AppPolicyClient::new() {
                 let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, &best_id);
                 let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, &best_id);
             }
-            // Release lock briefly while Windows migrates the stream, then re-lock.
+            // Release lock while Windows migrates the stream, then verify actual primary.
             drop(guard);
-            thread::sleep(Duration::from_millis(200));
+            thread::sleep(Duration::from_millis(250));
+            let migrated_primary = enumerator
+                .list_active_endpoints(DataFlow::Render)
+                .ok()
+                .and_then(|new_eps| find_primary_session(&new_eps, pid).map(|(id, _)| id));
             guard = state.lock().map_err(|e| e.to_string())?;
 
-            cur_primary = best_id;
-            primary_vol = best_vol;
+            if migrated_primary.as_deref() == Some(best_id.as_str()) {
+                guard.loopbacks.remove(&(pid, best_id.clone()));
+                cur_primary = best_id;
+                primary_vol = best_vol;
 
-            if let Some(old_ep) = eps.iter().find(|e| e.id == old_primary) {
-                if let Ok(handle) = LoopbackTee::start(pid, old_ep, old_primary_vol) {
-                    let ratio = if primary_vol > 0.0 {
-                        (old_primary_vol / primary_vol).clamp(0.0, 4.0)
-                    } else {
-                        0.0
-                    };
-                    handle.set_linear_gain(ratio.powi(2));
-                    handle.set_mute(old_primary_vol <= 0.0);
-                    guard.loopbacks.insert(
-                        (pid, old_primary),
-                        ActiveLoopback {
-                            handle,
-                            volume: old_primary_vol,
-                            muted: old_primary_vol <= 0.0,
-                        },
-                    );
+                if let Some(old_ep) = eps.iter().find(|e| e.id == old_primary) {
+                    if let Ok(handle) = LoopbackTee::start(pid, old_ep, old_primary_vol) {
+                        let ratio = if primary_vol > 0.0 {
+                            (old_primary_vol / primary_vol).clamp(0.0, 4.0)
+                        } else {
+                            0.0
+                        };
+                        handle.set_linear_gain(ratio.powi(2));
+                        handle.set_mute(old_primary_vol <= 0.0);
+                        guard.loopbacks.insert(
+                            (pid, old_primary),
+                            ActiveLoopback {
+                                handle,
+                                volume: old_primary_vol,
+                                muted: old_primary_vol <= 0.0,
+                            },
+                        );
+                    }
                 }
             }
         }
     }
 
     let has_loopbacks = guard.loopbacks.keys().any(|(p, _)| *p == pid);
-    let primary_eff = if has_loopbacks && !finalize && primary_vol < 0.05 {
+    let primary_eff = if has_loopbacks && primary_vol < 0.05 {
         0.05
     } else {
         primary_vol
