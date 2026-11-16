@@ -270,6 +270,41 @@ button:hover {
   min-width: 56px;
 }
 
+.btn-icon-mute {
+  min-width: 30px;
+  padding: 3px 6px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.btn-icon-mute.muted {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: var(--danger);
+}
+
+.app-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-inline-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 110px;
+}
+
+.app-title-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+  max-width: 140px;
+  cursor: pointer;
+}
+
 .btn-mute.muted {
   background: rgba(239, 68, 68, 0.2);
   border-color: var(--danger);

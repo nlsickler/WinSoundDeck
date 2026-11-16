@@ -1,27 +1,27 @@
-use std::collections::HashMap;
+mod app_settings;
+
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use app_settings::{ActiveLoopback, AppSettingsStore, SecondaryOutputSetting};
 use audio_core::ipc::{
     serve_named_pipe, DaemonStatus, EndpointStatus, IpcRequest, IpcResponse, LoopbackStatus,
     PresetSummary, SessionStatus, DEFAULT_PIPE_NAME,
 };
 use audio_core::{
     resolve_app_display_name, resolve_root_exe_name, AppPolicyClient, AudioEnumerator, AudioEvent,
-    ComGuard, DataFlow, DeviceRole, LoopbackHandle, LoopbackTee, PresetConfig, PresetEngine,
+    ComGuard, DataFlow, DeviceRole, LoopbackTee, PresetConfig, PresetEngine,
 };
-
-struct ActiveLoopback {
-    handle: LoopbackHandle,
-    volume: f32,
-    muted: bool,
-}
 
 struct DaemonState {
     config: PresetConfig,
+    app_settings: AppSettingsStore,
+    app_settings_path: PathBuf,
+    applied_pids: HashSet<u32>,
     loopbacks: HashMap<(u32, String), ActiveLoopback>,
     shutdown: bool,
 }
@@ -319,7 +319,16 @@ fn handle_request(
                     Ok(())
                 });
             match res {
-                Ok(()) => (IpcResponse::Ok, false),
+                Ok(()) => {
+                    if let Ok(mut guard) = state.lock() {
+                        let path = guard.app_settings_path.clone();
+                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                            s.volume = Some(vol);
+                            s.muted = Some(vol <= 0.0);
+                        });
+                    }
+                    (IpcResponse::Ok, false)
+                }
                 Err(e) => (
                     IpcResponse::Error {
                         message: e.to_string(),
@@ -346,7 +355,15 @@ fn handle_request(
                     Ok(())
                 });
             match res {
-                Ok(()) => (IpcResponse::Ok, false),
+                Ok(()) => {
+                    if let Ok(mut guard) = state.lock() {
+                        let path = guard.app_settings_path.clone();
+                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                            s.muted = Some(muted);
+                        });
+                    }
+                    (IpcResponse::Ok, false)
+                }
                 Err(e) => (
                     IpcResponse::Error {
                         message: e.to_string(),
@@ -365,7 +382,15 @@ fn handle_request(
                 ap.set_app_endpoint(pid, flow, DeviceRole::Multimedia, &endpoint_id)
             });
             match res {
-                Ok(()) => (IpcResponse::Ok, false),
+                Ok(()) => {
+                    if let Ok(mut guard) = state.lock() {
+                        let path = guard.app_settings_path.clone();
+                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                            s.primary_endpoint_id = Some(endpoint_id.clone());
+                        });
+                    }
+                    (IpcResponse::Ok, false)
+                }
                 Err(e) => (
                     IpcResponse::Error {
                         message: e.to_string(),
@@ -380,7 +405,15 @@ fn handle_request(
                 ap.reset_app_endpoint(pid, flow, DeviceRole::Multimedia)
             });
             match res {
-                Ok(()) => (IpcResponse::Ok, false),
+                Ok(()) => {
+                    if let Ok(mut guard) = state.lock() {
+                        let path = guard.app_settings_path.clone();
+                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                            s.primary_endpoint_id = None;
+                        });
+                    }
+                    (IpcResponse::Ok, false)
+                }
                 Err(e) => (
                     IpcResponse::Error {
                         message: e.to_string(),
@@ -409,13 +442,30 @@ fn handle_request(
                 Ok(handle) => {
                     if let Ok(mut guard) = state.lock() {
                         guard.loopbacks.insert(
-                            (pid, target_endpoint_id),
+                            (pid, target_endpoint_id.clone()),
                             ActiveLoopback {
                                 handle,
                                 volume: vol,
                                 muted: false,
                             },
                         );
+                        let path = guard.app_settings_path.clone();
+                        guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                            if let Some(existing) = s
+                                .secondary_outputs
+                                .iter_mut()
+                                .find(|o| o.endpoint_id == target_endpoint_id)
+                            {
+                                existing.volume = vol;
+                                existing.muted = false;
+                            } else {
+                                s.secondary_outputs.push(SecondaryOutputSetting {
+                                    endpoint_id: target_endpoint_id,
+                                    volume: vol,
+                                    muted: false,
+                                });
+                            }
+                        });
                     }
                     (IpcResponse::Ok, false)
                 }
@@ -428,14 +478,28 @@ fn handle_request(
             volume,
         } => {
             let vol = volume.clamp(0.0, 1.0);
+            let mute = vol <= 0.0;
             if let Ok(mut guard) = state.lock() {
-                if let Some(lb) = guard.loopbacks.get_mut(&(pid, target_endpoint_id)) {
+                if let Some(lb) = guard
+                    .loopbacks
+                    .get_mut(&(pid, target_endpoint_id.clone()))
+                {
                     lb.volume = vol;
                     lb.handle.set_volume(vol);
-                    let mute = vol <= 0.0;
                     lb.muted = mute;
                     lb.handle.set_mute(mute);
                 }
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                    if let Some(sec) = s
+                        .secondary_outputs
+                        .iter_mut()
+                        .find(|o| o.endpoint_id == target_endpoint_id)
+                    {
+                        sec.volume = vol;
+                        sec.muted = mute;
+                    }
+                });
             }
             (IpcResponse::Ok, false)
         }
@@ -445,10 +509,23 @@ fn handle_request(
             muted,
         } => {
             if let Ok(mut guard) = state.lock() {
-                if let Some(lb) = guard.loopbacks.get_mut(&(pid, target_endpoint_id)) {
+                if let Some(lb) = guard
+                    .loopbacks
+                    .get_mut(&(pid, target_endpoint_id.clone()))
+                {
                     lb.muted = muted;
                     lb.handle.set_mute(muted);
                 }
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                    if let Some(sec) = s
+                        .secondary_outputs
+                        .iter_mut()
+                        .find(|o| o.endpoint_id == target_endpoint_id)
+                    {
+                        sec.muted = muted;
+                    }
+                });
             }
             (IpcResponse::Ok, false)
         }
@@ -457,7 +534,12 @@ fn handle_request(
             target_endpoint_id,
         } => {
             if let Ok(mut guard) = state.lock() {
-                guard.loopbacks.remove(&(pid, target_endpoint_id));
+                guard.loopbacks.remove(&(pid, target_endpoint_id.clone()));
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.upsert_for_pid(pid, &path, |s| {
+                    s.secondary_outputs
+                        .retain(|o| o.endpoint_id != target_endpoint_id);
+                });
             }
             (IpcResponse::Ok, false)
         }
@@ -495,6 +577,15 @@ fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle<()>
                     exe_name,
                     root_exe_name,
                 }) => {
+                    if let Ok(mut guard) = state.lock() {
+                        let DaemonState {
+                            ref app_settings,
+                            ref mut applied_pids,
+                            ref mut loopbacks,
+                            ..
+                        } = *guard;
+                        app_settings.apply_to_pid(&enumerator, pid, applied_pids, loopbacks);
+                    }
                     let active = state.lock().ok().and_then(|g| {
                         let id = g.config.active_preset_id.as_ref()?;
                         g.config.presets.iter().find(|p| &p.id == id).cloned()
@@ -546,9 +637,32 @@ fn main() {
         }
     }
 
+    let app_settings_path = AppSettingsStore::path_beside_config(&config_path);
+    let app_settings = AppSettingsStore::load(&app_settings_path);
+    let mut applied_pids = HashSet::new();
+    let mut loopbacks = HashMap::new();
+
+    if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
+        for ep in eps {
+            if let Ok(sessions) = ep.sessions() {
+                for s in sessions {
+                    app_settings.apply_to_pid(
+                        &enumerator,
+                        s.pid,
+                        &mut applied_pids,
+                        &mut loopbacks,
+                    );
+                }
+            }
+        }
+    }
+
     let state = Arc::new(Mutex::new(DaemonState {
         config,
-        loopbacks: HashMap::new(),
+        app_settings,
+        app_settings_path,
+        applied_pids,
+        loopbacks,
         shutdown: false,
     }));
     let watcher = spawn_event_watcher(Arc::clone(&state));

@@ -116,6 +116,12 @@ pub fn resolve_root_exe_name(pid: u32) -> Option<String> {
     resolve_root_pid_and_name(pid).map(|(_, name)| name)
 }
 
+/// Walks the Windows process tree to find the root application's full executable path.
+pub fn resolve_root_exe_path(pid: u32) -> Option<String> {
+    let (root_pid, _) = resolve_root_pid_and_name(pid)?;
+    resolve_process_full_path(root_pid)
+}
+
 /// Resolves a user-friendly application display name (PE `FileDescription` / `ProductName`)
 /// for the root application process, falling back to the executable stem.
 pub fn resolve_app_display_name(pid: u32) -> Option<String> {

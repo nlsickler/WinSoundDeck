@@ -20,4 +20,6 @@ pub use preset::{
     AppRouteRule, AppVolumeRule, EndpointTarget, Preset, PresetConfig, PresetEngine,
     PresetSnapshot,
 };
-pub use session::{resolve_app_display_name, resolve_root_exe_name, AudioSession};
+pub use session::{
+    resolve_app_display_name, resolve_root_exe_name, resolve_root_exe_path, AudioSession,
+};

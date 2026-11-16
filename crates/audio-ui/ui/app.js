@@ -2,9 +2,8 @@ const { invoke } = window.__TAURI__.core;
 
 let isDraggingSlider = false;
 let activeTab = "apps";
-const expandedRoutingPids = new Set();
+const expandedAppPids = new Set();
 let showInactiveApps = false;
-let showInactiveRouting = false;
 
 function pct(vol) {
   return Math.round(Math.max(0, Math.min(1, vol)) * 100);
@@ -99,13 +98,11 @@ async function refreshAll(force = false) {
     const appSessions = status.sessions.filter((s) => s.pid !== 0);
 
     renderPresets(presetData);
-    renderAppsTab(appSessions, status.endpoints);
+    renderAppsTab(appSessions, status.endpoints, status.loopbacks || []);
     renderIOTab(status.endpoints);
-    renderRoutingTab(appSessions, status.endpoints, status.loopbacks || []);
 
     document.getElementById("count-apps").textContent = String(appSessions.length);
     document.getElementById("count-io").textContent = String(status.endpoints.length);
-    document.getElementById("count-routing").textContent = String(appSessions.length);
   } catch (err) {
     badge.textContent = "Daemon Offline";
     badge.className = "badge badge-offline";
@@ -239,31 +236,58 @@ function buildAppCard() {
   card.className = "card";
 
   const header = document.createElement("div");
-  header.className = "card-header";
+  header.className = "app-header-row";
+
+  const titleToggle = document.createElement("div");
+  titleToggle.className = "app-title-toggle";
+  const chevron = document.createElement("span");
+  chevron.className = "chevron";
   const title = document.createElement("span");
   title.className = "card-title";
-  const meta = document.createElement("div");
-  meta.className = "card-meta";
-  const epBadge = document.createElement("span");
-  epBadge.className = "badge-muted";
-  const pidBadge = document.createElement("span");
-  pidBadge.className = "badge-tag";
-  meta.append(epBadge, pidBadge);
-  header.append(title, meta);
+  titleToggle.append(chevron, title);
 
-  const row = document.createElement("div");
-  row.className = "controls-row";
+  const inlineControls = document.createElement("div");
+  inlineControls.className = "app-inline-controls";
   const muteBtn = document.createElement("button");
-  muteBtn.className = "btn-mute";
+  muteBtn.className = "btn-icon-mute";
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "0";
   slider.max = "100";
   const label = document.createElement("span");
   label.className = "vol-label";
-  row.append(muteBtn, slider, label);
+  inlineControls.append(muteBtn, slider, label);
 
-  card.append(header, row);
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+  const outCountBadge = document.createElement("span");
+  outCountBadge.className = "badge-muted";
+  const pidBadge = document.createElement("span");
+  pidBadge.className = "badge-tag";
+  meta.append(outCountBadge, pidBadge);
+
+  header.append(titleToggle, inlineControls, meta);
+
+  const body = document.createElement("div");
+  body.className = "routing-outputs";
+
+  card.append(header, body);
+
+  const toggleExpand = () => {
+    const s = card._item;
+    if (!s) return;
+    if (expandedAppPids.has(s.pid)) {
+      expandedAppPids.delete(s.pid);
+    } else {
+      expandedAppPids.add(s.pid);
+    }
+    const expanded = expandedAppPids.has(s.pid);
+    chevron.textContent = expanded ? "▾" : "▸";
+    body.classList.toggle("collapsed", !expanded);
+  };
+  titleToggle.onclick = toggleExpand;
+  meta.onclick = toggleExpand;
+  meta.style.cursor = "pointer";
 
   muteBtn.onclick = async () => {
     const s = card._item;
@@ -287,93 +311,6 @@ function buildAppCard() {
       pid: s.pid,
       volume: v,
     });
-  };
-
-  return card;
-}
-
-function renderAppsList(container, sessions, epNames) {
-  syncKeyedList(
-    container,
-    sessions,
-    (s) => `app:${s.pid}`,
-    "No audio sessions.",
-    buildAppCard,
-    (card, s) => {
-      card._item = s;
-      card.classList.toggle("inactive-card", !s.is_active);
-      const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
-      card.querySelector(".card-title").textContent = name;
-      card.querySelector(".badge-muted").textContent = epNames.get(s.endpoint_id) || "Unknown";
-      card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
-
-      const muteBtn = card.querySelector(".btn-mute");
-      muteBtn.classList.toggle("muted", s.muted);
-      muteBtn.textContent = s.muted ? "Muted" : "Mute";
-
-      const pctVal = pct(s.volume);
-      const slider = card.querySelector('input[type="range"]');
-      if (!isDraggingSlider && Number(slider.value) !== pctVal) {
-        slider.value = String(pctVal);
-      }
-      card.querySelector(".vol-label").textContent = `${pctVal}%`;
-    }
-  );
-}
-
-function renderAppsTab(sessions, endpoints) {
-  const epNames = new Map(endpoints.map((e) => [e.id, e.friendly_name]));
-  const active = sessions.filter((s) => s.is_active);
-  const inactive = sessions.filter((s) => !s.is_active);
-
-  renderAppsList(document.getElementById("apps-active-list"), active, epNames);
-  document.getElementById("apps-inactive-count").textContent = String(inactive.length);
-  document.getElementById("apps-inactive-group").style.display =
-    inactive.length > 0 ? "" : "none";
-  renderAppsList(document.getElementById("apps-inactive-list"), inactive, epNames);
-}
-
-function buildRoutingCard() {
-  const card = document.createElement("div");
-  card.className = "card";
-
-  const header = document.createElement("div");
-  header.className = "card-header routing-header";
-
-  const titleWrap = document.createElement("div");
-  titleWrap.className = "routing-title-wrap";
-  const chevron = document.createElement("span");
-  chevron.className = "chevron";
-  const title = document.createElement("span");
-  title.className = "card-title";
-  titleWrap.append(chevron, title);
-
-  const meta = document.createElement("div");
-  meta.className = "card-meta";
-  const outCountBadge = document.createElement("span");
-  outCountBadge.className = "badge-muted";
-  const pidBadge = document.createElement("span");
-  pidBadge.className = "badge-tag";
-  meta.append(outCountBadge, pidBadge);
-
-  header.append(titleWrap, meta);
-
-  const body = document.createElement("div");
-  body.className = "routing-outputs";
-
-  card.append(header, body);
-
-  header.onclick = () => {
-    const s = card._item;
-    if (!s) return;
-    if (expandedRoutingPids.has(s.pid)) {
-      expandedRoutingPids.delete(s.pid);
-    } else {
-      expandedRoutingPids.add(s.pid);
-    }
-    const expanded = expandedRoutingPids.has(s.pid);
-    chevron.textContent = expanded ? "▾" : "▸";
-    body.classList.toggle("collapsed", !expanded);
   };
 
   return card;
@@ -415,8 +352,6 @@ function buildRoutingOutputRow() {
           muted: false,
         });
       } else {
-        // Unchecking primary promotes the first active secondary loopback to primary,
-        // or mutes the session if no secondary outputs are active.
         const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
         if (fallback) {
           await invoke("route_app", {
@@ -439,7 +374,6 @@ function buildRoutingOutputRow() {
       }
     } else if (cb.checked && !isLoopback) {
       if (session.muted && activeLoopbacks.length === 0) {
-        // All outputs were unchecked (muted); checking a new output switches primary to it and unmutes.
         await invoke("route_app", {
           pid: session.pid,
           flow: "Render",
@@ -494,31 +428,44 @@ function buildRoutingOutputRow() {
   return row;
 }
 
-function renderRoutingList(container, sessions, renderEndpoints, loopbacks) {
+function renderAppsList(container, sessions, renderEndpoints, loopbacks) {
   syncKeyedList(
     container,
     sessions,
-    (s) => `route:${s.pid}`,
-    "No audio sessions to route.",
-    buildRoutingCard,
+    (s) => `app:${s.pid}`,
+    "No audio sessions.",
+    buildAppCard,
     (card, s) => {
       card._item = s;
       card.classList.toggle("inactive-card", !s.is_active);
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
-      card.querySelector(".card-title").textContent = name;
-      card.querySelector(".badge-tag").textContent = `PID ${s.pid}`;
+      const titleEl = card.querySelector(".card-title");
+      titleEl.textContent = name;
+      titleEl.title = name;
+      card.querySelector(".app-header-row > .card-meta > .badge-tag").textContent = `PID ${s.pid}`;
+
+      const muteBtn = card.querySelector(".btn-icon-mute");
+      muteBtn.classList.toggle("muted", s.muted);
+      muteBtn.textContent = s.muted ? "🔇" : "🔉";
+      muteBtn.title = s.muted ? "Unmute" : "Mute";
+
+      const headerPct = pct(s.volume);
+      const headerSlider = card.querySelector('.app-inline-controls input[type="range"]');
+      if (!isDraggingSlider && Number(headerSlider.value) !== headerPct) {
+        headerSlider.value = String(headerPct);
+      }
+      card.querySelector(".app-inline-controls .vol-label").textContent = `${headerPct}%`;
 
       const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
-      const primaryActive = !s.muted;
-      const activeCount = (primaryActive ? 1 : 0) + activeLoopbacks.length;
+      const activeCount = (!s.muted ? 1 : 0) + activeLoopbacks.length;
       card.querySelector(".badge-muted").textContent =
         activeCount === 0
           ? "Muted"
           : activeCount === 1
-            ? "1 output"
-            : `${activeCount} outputs`;
+            ? "1 out"
+            : `${activeCount} outs`;
 
-      const expanded = expandedRoutingPids.has(s.pid);
+      const expanded = expandedAppPids.has(s.pid);
       card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
       const body = card.querySelector(".routing-outputs");
       body.classList.toggle("collapsed", !expanded);
@@ -540,8 +487,6 @@ function renderRoutingList(container, sessions, renderEndpoints, loopbacks) {
 
           const cb = row.querySelector('input[type="checkbox"]');
           cb.checked = enabled;
-          cb.disabled = false;
-          cb.title = "";
 
           const nameEl = row.querySelector(".routing-output-name");
           nameEl.textContent = ep.friendly_name;
@@ -566,38 +511,22 @@ function renderRoutingList(container, sessions, renderEndpoints, loopbacks) {
   );
 }
 
-function renderRoutingTab(sessions, endpoints, loopbacks) {
+function renderAppsTab(sessions, endpoints, loopbacks) {
   const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
   const active = sessions.filter((s) => s.is_active);
   const inactive = sessions.filter((s) => !s.is_active);
 
-  renderRoutingList(
-    document.getElementById("routing-active-list"),
-    active,
-    renderEndpoints,
-    loopbacks
-  );
-  document.getElementById("routing-inactive-count").textContent = String(inactive.length);
-  document.getElementById("routing-inactive-group").style.display =
+  renderAppsList(document.getElementById("apps-active-list"), active, renderEndpoints, loopbacks);
+  document.getElementById("apps-inactive-count").textContent = String(inactive.length);
+  document.getElementById("apps-inactive-group").style.display =
     inactive.length > 0 ? "" : "none";
-  renderRoutingList(
-    document.getElementById("routing-inactive-list"),
-    inactive,
-    renderEndpoints,
-    loopbacks
-  );
+  renderAppsList(document.getElementById("apps-inactive-list"), inactive, renderEndpoints, loopbacks);
 }
 
 document.getElementById("apps-inactive-toggle").onclick = () => {
   showInactiveApps = !showInactiveApps;
   document.getElementById("apps-inactive-chevron").textContent = showInactiveApps ? "▾" : "▸";
   document.getElementById("apps-inactive-list").classList.toggle("collapsed", !showInactiveApps);
-};
-
-document.getElementById("routing-inactive-toggle").onclick = () => {
-  showInactiveRouting = !showInactiveRouting;
-  document.getElementById("routing-inactive-chevron").textContent = showInactiveRouting ? "▾" : "▸";
-  document.getElementById("routing-inactive-list").classList.toggle("collapsed", !showInactiveRouting);
 };
 
 setupTabs();
