@@ -90,6 +90,7 @@ name = "steel-thread"
 version = "0.1.0"
 dependencies = [
  "audio-core",
+ "windows",
 ]
 
 [[package]]

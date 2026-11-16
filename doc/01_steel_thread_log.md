@@ -122,7 +122,11 @@ Each validation step follows an experimental **Red → Green → Refactor** loop
 * **Status:** Passed + Refactored (2026-11-15)
 * **Code:** [policy.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/policy.rs), [preset.rs](file:///c:/Projects/audio-mixer/crates/audio-core/src/preset.rs), [main.rs](file:///c:/Projects/audio-mixer/crates/steel-thread/src/main.rs)
 * **What Was Tested:**
-  * Routed `vivaldi.exe` to `Speakers (HyperX Cloud II Wireless)` via `set_app_endpoint`, verified SWD path readback, then called `reset_app_endpoint` (passing a null `HSTRING` handle to `SetPersistedDefaultAudioEndpoint` on slot 25) and confirmed `get_app_endpoint` returned `""` (OS default).
+  * Opened a silent `IAudioClient` stream in `steel-thread` (`pid_a=35296`) and kept `vivaldi.exe` (`pid_b=15828`) playing uninterrupted on `PC Primary`.
+  * Routed `pid_a` to `Speakers (HyperX Cloud II Wireless)` and `pid_b` to `PC Primary`, then called `reset_app_endpoint` on `pid_a` only.
+  * Confirmed `pid_a` reset to `""` while `pid_b` retained its `PC Primary` SWD path intact.
+* **Key Learnings:**
+  * `SetPersistedDefaultAudioEndpoint` requires the target PID to have an active WASAPI audio session (`IAudioClient` initialized & started); calling it on a non-audio process returns `0x80070057` (`E_INVALIDARG`).
 * **Refactor (Red → Green → Refactor):**
   * Added `AppPolicyClient::reset_app_endpoint` and `AppPolicyClient::set_app_endpoint_swd` in `policy.rs`.
   * Updated `PresetSnapshot` in `preset.rs` to capture and restore each routed app's prior SWD path individually instead of calling `clear_all_app_endpoints()`.

@@ -567,59 +567,94 @@ fn run_step7(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
     Ok(())
 }
 
+fn open_silent_audio_session() -> Option<windows::Win32::Media::Audio::IAudioClient> {
+    use windows::Win32::Media::Audio::{
+        eMultimedia, eRender, IAudioClient, IMMDeviceEnumerator, MMDeviceEnumerator,
+        AUDCLNT_SHAREMODE_SHARED,
+    };
+    use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL};
+
+    unsafe {
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let dev = enumerator
+            .GetDefaultAudioEndpoint(eRender, eMultimedia)
+            .ok()?;
+        let client: IAudioClient = dev.Activate(CLSCTX_ALL, None).ok()?;
+        let fmt = client.GetMixFormat().ok()?;
+        let init_res = client.Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 200_000, 0, fmt, None);
+        CoTaskMemFree(Some(fmt.cast()));
+        init_res.ok()?;
+        client.Start().ok()?;
+        Some(client)
+    }
+}
+
 fn run_step8(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Result<()> {
-    println!("=== Step 8: Single-App Route Reset (AppPolicyClient::reset_app_endpoint) ===");
+    println!("=== Step 8: Single-App Route Reset (2-PID Isolation Check) ===");
     println!(
-        "Target app: \"{}\" | Target output: \"{}\" | Hold: {}s\n",
-        cfg.app_match, cfg.device_match, cfg.hold_secs
+        "Target output for PID A: \"{}\" (Vivaldi on PC Primary stays uninterrupted)\n",
+        cfg.device_match
     );
 
     let app_policy = AppPolicyClient::new()?;
     let render_eps = enumerator.list_active_endpoints(DataFlow::Render)?;
-    let Some(target_ep) = render_eps
+    let Some(ep_a) = render_eps
         .iter()
         .find(|ep| ep.friendly_name.to_lowercase().contains(&cfg.device_match.to_lowercase()))
     else {
         eprintln!("No active playback endpoint matched \"{}\".", cfg.device_match);
         return Ok(());
     };
+    let Some(ep_b) = render_eps
+        .iter()
+        .find(|ep| ep.friendly_name.to_lowercase().contains("pc primary"))
+    else {
+        eprintln!("No active playback endpoint matched \"PC Primary\".");
+        return Ok(());
+    };
 
     let app_needle = cfg.app_match.to_lowercase();
-    let mut found_pid = None;
-    for ep in &render_eps {
-        for s in ep.sessions()? {
-            if s.exe_name.to_lowercase() == app_needle {
-                found_pid = Some(s.pid);
-                break;
-            }
-        }
-        if found_pid.is_some() {
+    let mut pid_b = None;
+    for s in ep_b.sessions()? {
+        if s.exe_name.to_lowercase() == app_needle {
+            pid_b = Some(s.pid);
             break;
         }
     }
-    let pid = match found_pid {
-        Some(p) => p,
-        None => {
-            let self_pid = std::process::id();
-            println!(
-                "No active session for \"{}\"; probing with current process pid={self_pid}.",
-                cfg.app_match
-            );
-            self_pid
-        }
+    let Some(pid_b) = pid_b else {
+        eprintln!("No active session for \"{}\" on PC Primary.", cfg.app_match);
+        return Ok(());
     };
 
-    app_policy.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, &target_ep.id)?;
-    app_policy.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, &target_ep.id)?;
-    let applied = app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
-    println!("  [APPLY] pid={pid} Multimedia persisted = \"{applied}\"");
+    let _silent_client = open_silent_audio_session()
+        .expect("failed to open silent IAudioClient session for steel-thread");
+    let pid_a = std::process::id();
+    thread::sleep(Duration::from_millis(100));
 
-    thread::sleep(Duration::from_secs(cfg.hold_secs));
+    app_policy.set_app_endpoint(pid_a, DataFlow::Render, DeviceRole::Console, &ep_a.id)?;
+    app_policy.set_app_endpoint(pid_a, DataFlow::Render, DeviceRole::Multimedia, &ep_a.id)?;
+    app_policy.set_app_endpoint(pid_b, DataFlow::Render, DeviceRole::Console, &ep_b.id)?;
+    app_policy.set_app_endpoint(pid_b, DataFlow::Render, DeviceRole::Multimedia, &ep_b.id)?;
 
-    app_policy.reset_app_endpoint(pid, DataFlow::Render, DeviceRole::Console)?;
-    app_policy.reset_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
-    let reset = app_policy.get_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia)?;
-    println!("  [RESET] pid={pid} Multimedia persisted = \"{reset}\"");
+    let a_before = app_policy.get_app_endpoint(pid_a, DataFlow::Render, DeviceRole::Multimedia)?;
+    let b_before = app_policy.get_app_endpoint(pid_b, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [SETUP] pid_a={pid_a} (silent)  -> {a_before}");
+    println!("  [SETUP] pid_b={pid_b} (vivaldi) -> {b_before}");
+
+    app_policy.reset_app_endpoint(pid_a, DataFlow::Render, DeviceRole::Console)?;
+    app_policy.reset_app_endpoint(pid_a, DataFlow::Render, DeviceRole::Multimedia)?;
+
+    let a_after = app_policy.get_app_endpoint(pid_a, DataFlow::Render, DeviceRole::Multimedia)?;
+    let b_after = app_policy.get_app_endpoint(pid_b, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [RESET] pid_a={pid_a} (silent)  -> \"{a_after}\"");
+    println!("  [CHECK] pid_b={pid_b} (vivaldi) -> {b_after}");
+    assert!(a_after.is_empty(), "pid_a should be reset to empty");
+    assert_eq!(b_before, b_after, "pid_b route should be untouched");
+
+    app_policy.reset_app_endpoint(pid_b, DataFlow::Render, DeviceRole::Console)?;
+    app_policy.reset_app_endpoint(pid_b, DataFlow::Render, DeviceRole::Multimedia)?;
+    println!("  [PASS]  Single-app reset cleared pid_a while leaving pid_b intact.");
 
     Ok(())
 }
