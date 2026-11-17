@@ -11,7 +11,7 @@ use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, S
 use crate::{AudioEndpoint, AudioEvent, DeviceNotificationGuard, DeviceRole, Result};
 
 /// Direction of an audio endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DataFlow {
     Render,
     Capture,

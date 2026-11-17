@@ -7,7 +7,7 @@ use windows::Win32::System::WinRT::RoGetActivationFactory;
 use crate::{DataFlow, Result};
 
 /// Windows Core Audio device role for default endpoint assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DeviceRole {
     Console,
     Multimedia,

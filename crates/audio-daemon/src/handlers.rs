@@ -306,6 +306,27 @@ pub fn handle_request(
                 }
             });
             if res.is_ok() {
+                if let Ok(eps_render) = enumerator.list_active_endpoints(DataFlow::Render) {
+                    let flow = if eps_render.iter().any(|e| e.id == endpoint_id) {
+                        Some(DataFlow::Render)
+                    } else {
+                        Some(DataFlow::Capture)
+                    };
+                    if let (Some(flow), Ok(mut guard)) = (flow, state.lock()) {
+                        if role == DeviceRole::Multimedia {
+                            guard
+                                .default_endpoints
+                                .insert((flow, DeviceRole::Console), endpoint_id.clone());
+                            guard
+                                .default_endpoints
+                                .insert((flow, DeviceRole::Multimedia), endpoint_id.clone());
+                        } else {
+                            guard
+                                .default_endpoints
+                                .insert((flow, role), endpoint_id.clone());
+                        }
+                    }
+                }
                 log_info!("SetDefaultEndpoint(endpoint={endpoint_id}, role={role:?})");
             }
             ipc_ok(res)
@@ -692,6 +713,20 @@ fn handle_apply_preset(
         if guard.pre_preset_snapshot.is_none() {
             guard.pre_preset_snapshot = Some(snapshot);
         }
+        for target in &preset.endpoints {
+            if let Some(ep) = eps.iter().find(|e| {
+                target.endpoint_id.as_deref() == Some(e.id.as_str())
+                    || target
+                        .friendly_name_pattern
+                        .as_deref()
+                        .map(|pat| e.friendly_name.to_lowercase().contains(&pat.to_lowercase()))
+                        .unwrap_or(false)
+            }) {
+                for &role in &target.default_roles {
+                    guard.default_endpoints.insert((target.flow, role), ep.id.clone());
+                }
+            }
+        }
         guard.loopbacks.clear();
         for rule in &preset.app_loopbacks {
             let needle = rule.executable_name.to_lowercase();
@@ -758,14 +793,32 @@ fn handle_save_current_as_preset(
     let mut app_routes = Vec::new();
     let mut seen_route_exes = std::collections::HashSet::new();
 
+    let cached_defaults = state
+        .lock()
+        .map(|g| g.default_endpoints.clone())
+        .unwrap_or_default();
+
     for flow in [DataFlow::Render, DataFlow::Capture] {
-        let def_console = enumerator.default_endpoint_id(flow, DeviceRole::Console).ok();
-        let def_mm = enumerator
-            .default_endpoint_id(flow, DeviceRole::Multimedia)
-            .ok();
-        let def_comm = enumerator
-            .default_endpoint_id(flow, DeviceRole::Communications)
-            .ok();
+        let def_console = cached_defaults
+            .get(&(flow, DeviceRole::Console))
+            .cloned()
+            .or_else(|| enumerator.default_endpoint_id(flow, DeviceRole::Console).ok());
+        let def_mm = cached_defaults
+            .get(&(flow, DeviceRole::Multimedia))
+            .cloned()
+            .or_else(|| {
+                enumerator
+                    .default_endpoint_id(flow, DeviceRole::Multimedia)
+                    .ok()
+            });
+        let def_comm = cached_defaults
+            .get(&(flow, DeviceRole::Communications))
+            .cloned()
+            .or_else(|| {
+                enumerator
+                    .default_endpoint_id(flow, DeviceRole::Communications)
+                    .ok()
+            });
 
         let Ok(eps) = enumerator.list_active_endpoints(flow) else {
             continue;

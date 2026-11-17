@@ -70,6 +70,15 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
                         );
                     }
                 }
+                Ok(AudioEvent::DefaultDeviceChanged {
+                    flow,
+                    role,
+                    device_id,
+                }) => {
+                    if let Ok(mut guard) = state.lock() {
+                        guard.default_endpoints.insert((flow, role), device_id);
+                    }
+                }
                 Ok(AudioEvent::DeviceStateChanged { .. }) | Ok(AudioEvent::DeviceAdded { .. }) => {
                     _session_guards.clear();
                     _session_guards = arm_session_watchers(&enumerator, &tx);

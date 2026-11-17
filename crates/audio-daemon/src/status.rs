@@ -49,7 +49,7 @@ pub fn build_daemon_status(
     state: &DaemonState,
 ) -> audio_core::Result<DaemonStatus> {
     let active_id = state.config.active_preset_id.clone();
-    let mut status = collect_raw_status(enumerator, active_id)?;
+    let mut status = collect_raw_status(enumerator, active_id, &state.default_endpoints)?;
 
     for ep in &mut status.endpoints {
         ep.hidden = state.app_settings.hidden_endpoints.contains(&ep.id);
@@ -109,22 +109,43 @@ pub fn build_daemon_status(
 fn collect_raw_status(
     enumerator: &AudioEnumerator,
     active_preset_id: Option<String>,
+    default_endpoints: &HashMap<(DataFlow, DeviceRole), String>,
 ) -> audio_core::Result<DaemonStatus> {
-    // Use a fresh IMMDeviceEnumerator for default-endpoint readback so long-lived COM
-    // proxies without a message loop never return cached default roles.
-    let fresh = AudioEnumerator::new();
-    let role_enum = fresh.as_ref().unwrap_or(enumerator);
-    let def_render_mm = role_enum
-        .default_endpoint_id(DataFlow::Render, DeviceRole::Multimedia)
+    let def_render_mm = default_endpoints
+        .get(&(DataFlow::Render, DeviceRole::Multimedia))
+        .cloned()
+        .or_else(|| {
+            enumerator
+                .default_endpoint_id(DataFlow::Render, DeviceRole::Multimedia)
+                .ok()
+        })
         .unwrap_or_default();
-    let def_render_comm = role_enum
-        .default_endpoint_id(DataFlow::Render, DeviceRole::Communications)
+    let def_render_comm = default_endpoints
+        .get(&(DataFlow::Render, DeviceRole::Communications))
+        .cloned()
+        .or_else(|| {
+            enumerator
+                .default_endpoint_id(DataFlow::Render, DeviceRole::Communications)
+                .ok()
+        })
         .unwrap_or_default();
-    let def_cap_mm = role_enum
-        .default_endpoint_id(DataFlow::Capture, DeviceRole::Multimedia)
+    let def_cap_mm = default_endpoints
+        .get(&(DataFlow::Capture, DeviceRole::Multimedia))
+        .cloned()
+        .or_else(|| {
+            enumerator
+                .default_endpoint_id(DataFlow::Capture, DeviceRole::Multimedia)
+                .ok()
+        })
         .unwrap_or_default();
-    let def_cap_comm = role_enum
-        .default_endpoint_id(DataFlow::Capture, DeviceRole::Communications)
+    let def_cap_comm = default_endpoints
+        .get(&(DataFlow::Capture, DeviceRole::Communications))
+        .cloned()
+        .or_else(|| {
+            enumerator
+                .default_endpoint_id(DataFlow::Capture, DeviceRole::Communications)
+                .ok()
+        })
         .unwrap_or_default();
 
     let mut endpoints = Vec::new();

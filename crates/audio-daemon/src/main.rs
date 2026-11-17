@@ -11,7 +11,10 @@ use std::sync::{Arc, Mutex};
 
 use app_settings::AppSettingsStore;
 use audio_core::ipc::{serve_named_pipe, DEFAULT_PIPE_NAME};
-use audio_core::{log_error, log_info, AudioEnumerator, ComGuard, DataFlow, PresetConfig, PresetEngine};
+use audio_core::{
+    log_error, log_info, AudioEnumerator, ComGuard, DataFlow, DeviceRole, PresetConfig,
+    PresetEngine,
+};
 use handlers::handle_request;
 use state::DaemonState;
 use watcher::spawn_event_watcher;
@@ -94,6 +97,15 @@ fn main() {
         }
     }
 
+    let mut default_endpoints = HashMap::new();
+    for flow in [DataFlow::Render, DataFlow::Capture] {
+        for role in DeviceRole::ALL {
+            if let Ok(id) = enumerator.default_endpoint_id(flow, role) {
+                default_endpoints.insert((flow, role), id);
+            }
+        }
+    }
+
     let state = Arc::new(Mutex::new(DaemonState {
         config,
         config_path,
@@ -101,6 +113,7 @@ fn main() {
         app_settings_path,
         applied_pids,
         loopbacks,
+        default_endpoints,
         pre_preset_snapshot: None,
         shutdown: false,
     }));
