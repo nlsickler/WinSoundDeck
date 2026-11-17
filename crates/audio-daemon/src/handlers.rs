@@ -593,23 +593,40 @@ fn handle_set_app_output_volume(
     Ok(())
 }
 
-fn slugify_preset_id(name: &str) -> String {
-    let mut slug = String::new();
+fn unique_preset_id(existing: &[Preset], name: &str) -> String {
+    let mut base = String::new();
     let mut prev_dash = false;
     for ch in name.trim().chars() {
         if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
+            base.push(ch.to_ascii_lowercase());
             prev_dash = false;
-        } else if !prev_dash && !slug.is_empty() {
-            slug.push('-');
+        } else if !prev_dash && !base.is_empty() {
+            base.push('-');
             prev_dash = true;
         }
     }
-    let trimmed = slug.trim_matches('-').to_string();
-    if trimmed.is_empty() {
+    let base = base.trim_matches('-').to_string();
+    let base = if base.is_empty() {
         "preset".to_string()
     } else {
-        trimmed
+        base
+    };
+
+    if let Some(found) = existing.iter().find(|p| p.name == name) {
+        return found.id.clone();
+    }
+
+    if !existing.iter().any(|p| p.id == base) {
+        return base;
+    }
+
+    let mut suffix = 2u32;
+    loop {
+        let candidate = format!("{base}-{suffix}");
+        if !existing.iter().any(|p| p.id == candidate) {
+            return candidate;
+        }
+        suffix += 1;
     }
 }
 
@@ -709,7 +726,6 @@ fn handle_save_current_as_preset(
         );
     }
 
-    let id = slugify_preset_id(&name);
     let mut endpoints = Vec::new();
     let mut app_routes = Vec::new();
     let mut seen_route_exes = std::collections::HashSet::new();
@@ -800,6 +816,7 @@ fn handle_save_current_as_preset(
         }
     }
 
+    let id = unique_preset_id(&guard.config.presets, &name);
     let preset = Preset {
         id: id.clone(),
         name: name.clone(),
