@@ -2,20 +2,27 @@ import { syncKeyedList } from "./dom.js";
 
 const { invoke } = window.__TAURI__.core;
 
+let currentActivePresetId = null;
+
 export function setupPresetsBar(onRefresh) {
-  const newBtn = document.getElementById("preset-new-btn");
+  const actionBtn = document.getElementById("preset-new-btn");
   const form = document.getElementById("preset-save-form");
   const input = document.getElementById("preset-name-input");
   const cancelBtn = document.getElementById("preset-cancel-btn");
 
   const closeForm = () => {
     form.classList.add("collapsed");
-    newBtn.style.display = "";
+    actionBtn.style.display = "";
     input.value = "";
   };
 
-  newBtn.onclick = () => {
-    newBtn.style.display = "none";
+  actionBtn.onclick = async () => {
+    if (currentActivePresetId) {
+      await invoke("delete_preset", { id: currentActivePresetId });
+      await onRefresh(true);
+      return;
+    }
+    actionBtn.style.display = "none";
     form.classList.remove("collapsed");
     input.focus();
   };
@@ -33,6 +40,19 @@ export function setupPresetsBar(onRefresh) {
 }
 
 export function renderPresets({ active_preset_id, presets }, onRefresh) {
+  currentActivePresetId = active_preset_id || null;
+
+  const actionBtn = document.getElementById("preset-new-btn");
+  if (currentActivePresetId) {
+    actionBtn.textContent = "Delete";
+    actionBtn.className = "btn-danger";
+    actionBtn.title = "Delete active preset";
+  } else {
+    actionBtn.textContent = "+ Save";
+    actionBtn.className = "btn-secondary";
+    actionBtn.title = "Save current state as a preset";
+  }
+
   const el = document.getElementById("presets-list");
   syncKeyedList(
     el,
@@ -45,13 +65,7 @@ export function renderPresets({ active_preset_id, presets }, onRefresh) {
 
       const applyBtn = document.createElement("button");
       applyBtn.className = "preset-apply-btn";
-
-      const delBtn = document.createElement("button");
-      delBtn.className = "preset-del-btn";
-      delBtn.textContent = "🗑️";
-      delBtn.title = "Delete preset";
-
-      pill.append(applyBtn, delBtn);
+      pill.append(applyBtn);
 
       applyBtn.onclick = async () => {
         if (pill.classList.contains("active")) {
@@ -59,12 +73,6 @@ export function renderPresets({ active_preset_id, presets }, onRefresh) {
         } else {
           await invoke("apply_preset", { id: pill.dataset.presetId });
         }
-        await onRefresh(true);
-      };
-
-      delBtn.onclick = async (e) => {
-        e.stopPropagation();
-        await invoke("delete_preset", { id: pill.dataset.presetId });
         await onRefresh(true);
       };
 

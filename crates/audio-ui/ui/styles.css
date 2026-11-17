@@ -130,22 +130,17 @@ body {
   border: none;
   background: transparent;
   border-radius: 0;
-  padding: 4px 8px;
+  padding: 4px 10px;
 }
 
 .preset-pill.active button {
   color: #fff;
 }
 
-.preset-del-btn {
-  opacity: 0.65;
-  padding: 4px 6px !important;
-  font-size: 11px;
-}
-
-.preset-del-btn:hover {
-  opacity: 1;
-  color: #fca5a5 !important;
+.btn-danger {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: var(--danger);
+  color: #fca5a5;
 }
 
 .preset-save-wrap {
