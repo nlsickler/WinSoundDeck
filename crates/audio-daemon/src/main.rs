@@ -101,6 +101,7 @@ fn main() {
         app_settings_path,
         applied_pids,
         loopbacks,
+        pre_preset_snapshot: None,
         shutdown: false,
     }));
     let watcher = spawn_event_watcher(Arc::clone(&state));

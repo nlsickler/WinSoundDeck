@@ -85,10 +85,18 @@ pub fn handle_request(
             ipc_ok(res)
         }
         IpcRequest::ClearActivePreset => {
-            let mut guard = state.lock().expect("state lock");
-            guard.config.active_preset_id = None;
-            let path = guard.config_path.clone();
-            let res = guard.config.save_to_file(&path);
+            let (snap, res) = {
+                let mut guard = state.lock().expect("state lock");
+                guard.config.active_preset_id = None;
+                let path = guard.config_path.clone();
+                let res = guard.config.save_to_file(&path);
+                (guard.pre_preset_snapshot.take(), res)
+            };
+            if let Some(snap) = snap {
+                if let Err(e) = snap.restore(enumerator) {
+                    log_warn!("ClearActivePreset restore error: {e}");
+                }
+            }
             log_info!("ClearActivePreset");
             ipc_ok(res)
         }
@@ -651,19 +659,25 @@ fn handle_apply_preset(
         preset
     };
 
-    if let Err(e) = PresetEngine::new(enumerator).apply_preset(&preset) {
-        log_error!("ApplyPreset(id={id}) failed: {e}");
-        return (
-            IpcResponse::Error {
-                message: e.to_string(),
-            },
-            false,
-        );
-    }
+    let snapshot = match PresetEngine::new(enumerator).apply_preset(&preset) {
+        Ok(s) => s,
+        Err(e) => {
+            log_error!("ApplyPreset(id={id}) failed: {e}");
+            return (
+                IpcResponse::Error {
+                    message: e.to_string(),
+                },
+                false,
+            );
+        }
+    };
 
     // Re-apply secondary loopback outputs declared in the preset.
     if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
         let mut guard = state.lock().expect("state lock");
+        if guard.pre_preset_snapshot.is_none() {
+            guard.pre_preset_snapshot = Some(snapshot);
+        }
         guard.loopbacks.clear();
         for rule in &preset.app_loopbacks {
             let needle = rule.executable_name.to_lowercase();

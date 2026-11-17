@@ -48,7 +48,7 @@ export function renderPresets({ active_preset_id, presets }, onRefresh) {
 
       const delBtn = document.createElement("button");
       delBtn.className = "preset-del-btn";
-      delBtn.textContent = "×";
+      delBtn.textContent = "🗑️";
       delBtn.title = "Delete preset";
 
       pill.append(applyBtn, delBtn);
@@ -76,7 +76,9 @@ export function renderPresets({ active_preset_id, presets }, onRefresh) {
       pill.classList.toggle("active", isActive);
       const applyBtn = pill.querySelector(".preset-apply-btn");
       applyBtn.textContent = p.name;
-      applyBtn.title = isActive ? "Click to deactivate preset" : `Apply "${p.name}"`;
+      applyBtn.title = isActive
+        ? "Click to deactivate and restore previous settings"
+        : `Apply "${p.name}"`;
     }
   );
 }
