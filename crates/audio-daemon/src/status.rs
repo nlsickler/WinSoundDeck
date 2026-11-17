@@ -110,16 +110,20 @@ fn collect_raw_status(
     enumerator: &AudioEnumerator,
     active_preset_id: Option<String>,
 ) -> audio_core::Result<DaemonStatus> {
-    let def_render_mm = enumerator
+    // Use a fresh IMMDeviceEnumerator for default-endpoint readback so long-lived COM
+    // proxies without a message loop never return cached default roles.
+    let fresh = AudioEnumerator::new();
+    let role_enum = fresh.as_ref().unwrap_or(enumerator);
+    let def_render_mm = role_enum
         .default_endpoint_id(DataFlow::Render, DeviceRole::Multimedia)
         .unwrap_or_default();
-    let def_render_comm = enumerator
+    let def_render_comm = role_enum
         .default_endpoint_id(DataFlow::Render, DeviceRole::Communications)
         .unwrap_or_default();
-    let def_cap_mm = enumerator
+    let def_cap_mm = role_enum
         .default_endpoint_id(DataFlow::Capture, DeviceRole::Multimedia)
         .unwrap_or_default();
-    let def_cap_comm = enumerator
+    let def_cap_comm = role_enum
         .default_endpoint_id(DataFlow::Capture, DeviceRole::Communications)
         .unwrap_or_default();
 
