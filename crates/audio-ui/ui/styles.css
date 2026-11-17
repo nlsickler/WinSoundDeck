@@ -157,8 +157,31 @@ body {
   gap: 4px;
 }
 
-.preset-save-form.collapsed {
-  display: none;
+.preset-save-form.collapsed,
+.preset-confirm-box.collapsed,
+.collapsed {
+  display: none !important;
+}
+
+.btn-icon-action {
+  padding: 3px 7px;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.preset-confirm-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preset-confirm-label {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preset-save-form input[type="text"] {
