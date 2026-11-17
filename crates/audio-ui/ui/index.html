@@ -18,6 +18,14 @@
   <section class="presets-bar" id="presets-section">
     <span class="presets-label">Presets</span>
     <div id="presets-list" class="presets-row"></div>
+    <div id="preset-save-wrap" class="preset-save-wrap">
+      <button id="preset-new-btn" class="btn-secondary">+ Save</button>
+      <form id="preset-save-form" class="preset-save-form collapsed">
+        <input id="preset-name-input" type="text" placeholder="Preset name..." maxlength="40" />
+        <button type="submit" class="preset-btn active">Save</button>
+        <button type="button" id="preset-cancel-btn">Cancel</button>
+      </form>
+    </div>
   </section>
 
   <nav class="tabs" role="tablist">

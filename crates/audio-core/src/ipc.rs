@@ -28,6 +28,13 @@ pub enum IpcRequest {
     ApplyPreset {
         id: String,
     },
+    SaveCurrentAsPreset {
+        name: String,
+    },
+    DeletePreset {
+        id: String,
+    },
+    ClearActivePreset,
     SetEndpointVolume {
         flow: DataFlow,
         endpoint_id: String,

@@ -475,6 +475,7 @@ fn run_step6(enumerator: &AudioEnumerator, cfg: &CliConfig) -> audio_core::Resul
                 },
             ],
             app_routes: vec![],
+            app_loopbacks: vec![],
         }],
     };
 

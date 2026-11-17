@@ -23,6 +23,12 @@ impl PresetConfig {
     }
 
     pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         fs::write(path, json)
@@ -37,6 +43,17 @@ pub struct Preset {
     pub endpoints: Vec<EndpointTarget>,
     #[serde(default)]
     pub app_routes: Vec<AppRouteRule>,
+    #[serde(default)]
+    pub app_loopbacks: Vec<AppLoopbackRule>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppLoopbackRule {
+    pub executable_name: String,
+    pub target_endpoint_id: String,
+    pub volume: f32,
+    #[serde(default)]
+    pub muted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 import { isUserInteracting, setupTabs } from "./dom.js";
 import { renderAppsTab, setupAppsTabControls } from "./apps_tab.js";
 import { renderIOTab } from "./io_tab.js";
-import { renderPresets } from "./presets_bar.js";
+import { renderPresets, setupPresetsBar } from "./presets_bar.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -33,6 +33,7 @@ async function refreshAll(force = false) {
 
 setupTabs();
 setupAppsTabControls();
+setupPresetsBar(refreshAll);
 document.getElementById("refresh-btn").onclick = () => refreshAll(true);
 refreshAll(true);
 setInterval(() => refreshAll(false), 2000);

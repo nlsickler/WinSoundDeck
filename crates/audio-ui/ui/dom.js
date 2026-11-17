@@ -15,7 +15,11 @@ export function setSliderDragging(val) {
 export function isUserInteracting() {
   if (draggingSlider) return true;
   const active = document.activeElement;
-  return Boolean(active && active.tagName === "SELECT");
+  if (!active) return false;
+  return (
+    active.tagName === "SELECT" ||
+    (active.tagName === "INPUT" && active.type === "text")
+  );
 }
 
 export function setupTabs() {

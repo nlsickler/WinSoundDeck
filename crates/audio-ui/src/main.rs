@@ -10,9 +10,9 @@ use audio_core::ipc::{
 };
 use audio_core::DataFlow;
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, WindowEvent};
+use tauri::{AppHandle, Manager, WindowEvent};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -82,8 +82,30 @@ fn list_presets() -> Result<PresetsList, String> {
 }
 
 #[tauri::command]
-fn apply_preset(id: String) -> Result<(), String> {
+fn apply_preset(app: AppHandle, id: String) -> Result<(), String> {
     ipc_call(IpcRequest::ApplyPreset { id })?;
+    refresh_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn save_current_as_preset(app: AppHandle, name: String) -> Result<(), String> {
+    ipc_call(IpcRequest::SaveCurrentAsPreset { name })?;
+    refresh_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_preset(app: AppHandle, id: String) -> Result<(), String> {
+    ipc_call(IpcRequest::DeletePreset { id })?;
+    refresh_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_active_preset(app: AppHandle) -> Result<(), String> {
+    ipc_call(IpcRequest::ClearActivePreset)?;
+    refresh_tray_menu(&app);
     Ok(())
 }
 
@@ -232,6 +254,54 @@ fn build_tray_icon() -> tauri::image::Image<'static> {
     tauri::image::Image::new_owned(rgba, 32, 32)
 }
 
+fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let open_item = MenuItem::with_id(app, "open", "Open Mixer", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![Box::new(open_item)];
+
+    if let Ok(IpcResponse::Presets {
+        active_preset_id,
+        presets,
+    }) = ipc_call(IpcRequest::ListPresets)
+    {
+        if !presets.is_empty() {
+            items.push(Box::new(PredefinedMenuItem::separator(app)?));
+            for p in presets {
+                let is_active = active_preset_id.as_deref() == Some(p.id.as_str());
+                let label = if is_active {
+                    format!("✓ {}", p.name)
+                } else {
+                    p.name
+                };
+                let item = MenuItem::with_id(
+                    app,
+                    format!("preset:{}", p.id),
+                    label,
+                    true,
+                    None::<&str>,
+                )?;
+                items.push(Box::new(item));
+            }
+        }
+    }
+
+    items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    items.push(Box::new(quit_item));
+
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        items.iter().map(|b| b.as_ref()).collect();
+    Menu::with_items(app, &refs)
+}
+
+fn refresh_tray_menu(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Ok(menu) = build_tray_menu(app) {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
+}
+
 fn main() {
     audio_core::logging::init_logging("audio-ui");
     audio_core::log_info!("Starting audio-ui");
@@ -240,21 +310,25 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            let open_item = MenuItem::with_id(app, "open", "Open Mixer", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+            let menu = build_tray_menu(app.handle())?;
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main-tray")
                 .icon(build_tray_icon())
                 .menu(&menu)
                 .tooltip("Audio Mixer")
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" => show_main_window(app),
-                    "quit" => {
+                .on_menu_event(|app, event| {
+                    let id = event.id.as_ref();
+                    if id == "open" {
+                        show_main_window(app);
+                    } else if id == "quit" {
                         let _ = ipc_call(IpcRequest::Shutdown);
                         app.exit(0);
+                    } else if let Some(preset_id) = id.strip_prefix("preset:") {
+                        let _ = ipc_call(IpcRequest::ApplyPreset {
+                            id: preset_id.to_string(),
+                        });
+                        refresh_tray_menu(app);
                     }
-                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -281,6 +355,9 @@ fn main() {
             get_status,
             list_presets,
             apply_preset,
+            save_current_as_preset,
+            delete_preset,
+            clear_active_preset,
             set_endpoint_volume,
             set_endpoint_mute,
             set_session_volume,

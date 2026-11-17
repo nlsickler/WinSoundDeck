@@ -96,6 +96,7 @@ fn main() {
 
     let state = Arc::new(Mutex::new(DaemonState {
         config,
+        config_path,
         app_settings,
         app_settings_path,
         applied_pids,

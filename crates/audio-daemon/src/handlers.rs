@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use audio_core::ipc::{IpcRequest, IpcResponse, PresetSummary};
 use audio_core::{
-    log_debug, log_error, log_info, log_warn, AppPolicyClient, AudioEnumerator, DataFlow,
-    DeviceRole, LoopbackTee, PresetEngine,
+    log_debug, log_error, log_info, log_warn, resolve_root_exe_name, AppLoopbackRule,
+    AppPolicyClient, AppRouteRule, AppVolumeRule, AudioEnumerator, DataFlow, DeviceRole,
+    EndpointTarget, LoopbackTee, Preset, PresetEngine,
 };
 
 use crate::app_settings::{ActiveLoopback, SecondaryOutputSetting};
@@ -68,20 +69,28 @@ pub fn handle_request(
                 false,
             )
         }
-        IpcRequest::ApplyPreset { id } => {
+        IpcRequest::ApplyPreset { id } => handle_apply_preset(enumerator, state, id),
+        IpcRequest::SaveCurrentAsPreset { name } => {
+            handle_save_current_as_preset(enumerator, state, name)
+        }
+        IpcRequest::DeletePreset { id } => {
             let mut guard = state.lock().expect("state lock");
-            let Some(preset) = guard.config.presets.iter().find(|p| p.id == id).cloned() else {
-                return (
-                    IpcResponse::Error {
-                        message: format!("Preset '{id}' not found"),
-                    },
-                    false,
-                );
-            };
-            guard.config.active_preset_id = Some(id);
-            drop(guard);
-
-            ipc_ok(PresetEngine::new(enumerator).apply_preset(&preset).map(|_| ()))
+            guard.config.presets.retain(|p| p.id != id);
+            if guard.config.active_preset_id.as_deref() == Some(id.as_str()) {
+                guard.config.active_preset_id = None;
+            }
+            let path = guard.config_path.clone();
+            let res = guard.config.save_to_file(&path);
+            log_info!("DeletePreset(id={id})");
+            ipc_ok(res)
+        }
+        IpcRequest::ClearActivePreset => {
+            let mut guard = state.lock().expect("state lock");
+            guard.config.active_preset_id = None;
+            let path = guard.config_path.clone();
+            let res = guard.config.save_to_file(&path);
+            log_info!("ClearActivePreset");
+            ipc_ok(res)
         }
         IpcRequest::SetEndpointVolume {
             flow,
@@ -582,6 +591,233 @@ fn handle_set_app_output_volume(
     });
 
     Ok(())
+}
+
+fn slugify_preset_id(name: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for ch in name.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash && !slug.is_empty() {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    let trimmed = slug.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "preset".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn handle_apply_preset(
+    enumerator: &AudioEnumerator,
+    state: &Arc<Mutex<DaemonState>>,
+    id: String,
+) -> (IpcResponse, bool) {
+    let preset = {
+        let mut guard = state.lock().expect("state lock");
+        let Some(preset) = guard.config.presets.iter().find(|p| p.id == id).cloned() else {
+            return (
+                IpcResponse::Error {
+                    message: format!("Preset '{id}' not found"),
+                },
+                false,
+            );
+        };
+        guard.config.active_preset_id = Some(id.clone());
+        let path = guard.config_path.clone();
+        let _ = guard.config.save_to_file(&path);
+        preset
+    };
+
+    if let Err(e) = PresetEngine::new(enumerator).apply_preset(&preset) {
+        log_error!("ApplyPreset(id={id}) failed: {e}");
+        return (
+            IpcResponse::Error {
+                message: e.to_string(),
+            },
+            false,
+        );
+    }
+
+    // Re-apply secondary loopback outputs declared in the preset.
+    if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
+        let mut guard = state.lock().expect("state lock");
+        guard.loopbacks.clear();
+        for rule in &preset.app_loopbacks {
+            let needle = rule.executable_name.to_lowercase();
+            let Some(target_ep) = eps.iter().find(|e| e.id == rule.target_endpoint_id) else {
+                continue;
+            };
+            let mut matched_pid: Option<(u32, f32)> = None;
+            for ep in &eps {
+                if let Ok(sessions) = ep.sessions() {
+                    for s in sessions {
+                        if s.pid == 0 {
+                            continue;
+                        }
+                        let root = resolve_root_exe_name(s.pid)
+                            .unwrap_or_else(|| s.exe_name.clone());
+                        if s.exe_name.to_lowercase() == needle || root.to_lowercase() == needle {
+                            let vol = s.volume().unwrap_or(1.0);
+                            if s.is_active || matched_pid.is_none() {
+                                matched_pid = Some((s.pid, vol));
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some((pid, primary_vol)) = matched_pid {
+                let vol = rule.volume.clamp(0.0, 1.0);
+                if let Ok(handle) = LoopbackTee::start(pid, target_ep, vol) {
+                    let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
+                    handle.set_linear_gain(ratio.powi(2));
+                    handle.set_mute(rule.muted || vol <= 0.0);
+                    guard.loopbacks.insert(
+                        (pid, target_ep.id.clone()),
+                        ActiveLoopback {
+                            handle,
+                            volume: vol,
+                            muted: rule.muted || vol <= 0.0,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    log_info!("ApplyPreset(id={id}) applied");
+    (IpcResponse::Ok, false)
+}
+
+fn handle_save_current_as_preset(
+    enumerator: &AudioEnumerator,
+    state: &Arc<Mutex<DaemonState>>,
+    raw_name: String,
+) -> (IpcResponse, bool) {
+    let name = raw_name.trim().to_string();
+    if name.is_empty() {
+        return (
+            IpcResponse::Error {
+                message: "Preset name cannot be empty".to_string(),
+            },
+            false,
+        );
+    }
+
+    let id = slugify_preset_id(&name);
+    let mut endpoints = Vec::new();
+    let mut app_routes = Vec::new();
+    let mut seen_route_exes = std::collections::HashSet::new();
+
+    for flow in [DataFlow::Render, DataFlow::Capture] {
+        let def_console = enumerator.default_endpoint_id(flow, DeviceRole::Console).ok();
+        let def_mm = enumerator
+            .default_endpoint_id(flow, DeviceRole::Multimedia)
+            .ok();
+        let def_comm = enumerator
+            .default_endpoint_id(flow, DeviceRole::Communications)
+            .ok();
+
+        let Ok(eps) = enumerator.list_active_endpoints(flow) else {
+            continue;
+        };
+        for ep in eps {
+            let mut default_roles = Vec::new();
+            if def_console.as_deref() == Some(ep.id.as_str()) {
+                default_roles.push(DeviceRole::Console);
+            }
+            if def_mm.as_deref() == Some(ep.id.as_str()) {
+                default_roles.push(DeviceRole::Multimedia);
+            }
+            if def_comm.as_deref() == Some(ep.id.as_str()) {
+                default_roles.push(DeviceRole::Communications);
+            }
+
+            let vol_state = ep.master_volume().ok();
+            let mut app_rules = Vec::new();
+
+            if flow == DataFlow::Render {
+                if let Ok(sessions) = ep.sessions() {
+                    let mut seen_ep_exes = std::collections::HashSet::new();
+                    for s in sessions {
+                        if s.pid == 0 {
+                            continue;
+                        }
+                        let root = resolve_root_exe_name(s.pid)
+                            .unwrap_or_else(|| s.exe_name.clone());
+                        let lower = root.to_ascii_lowercase();
+                        if matches!(lower.as_str(), "audio-daemon.exe" | "audio-ui.exe") {
+                            continue;
+                        }
+                        if seen_ep_exes.insert(lower.clone()) {
+                            app_rules.push(AppVolumeRule {
+                                executable_name: root.clone(),
+                                target_volume_scalar: s.volume().unwrap_or(1.0),
+                                is_muted: s.is_muted().unwrap_or(false),
+                            });
+                        }
+                        if s.is_active && seen_route_exes.insert(lower) {
+                            app_routes.push(AppRouteRule {
+                                executable_name: root,
+                                flow: DataFlow::Render,
+                                roles: vec![DeviceRole::Console, DeviceRole::Multimedia],
+                                target_endpoint_id: Some(ep.id.clone()),
+                                target_friendly_name_pattern: Some(ep.friendly_name.clone()),
+                            });
+                        }
+                    }
+                }
+            }
+
+            endpoints.push(EndpointTarget {
+                flow,
+                endpoint_id: Some(ep.id.clone()),
+                friendly_name_pattern: Some(ep.friendly_name.clone()),
+                default_roles,
+                master_volume: vol_state.map(|v| v.volume),
+                master_mute: vol_state.map(|v| v.muted),
+                default_fallback_volume: None,
+                app_rules,
+            });
+        }
+    }
+
+    let mut guard = state.lock().expect("state lock");
+    let mut app_loopbacks = Vec::new();
+    for ((pid, target_ep_id), lb) in &guard.loopbacks {
+        if let Some(root) = resolve_root_exe_name(*pid) {
+            app_loopbacks.push(AppLoopbackRule {
+                executable_name: root,
+                target_endpoint_id: target_ep_id.clone(),
+                volume: lb.volume,
+                muted: lb.muted,
+            });
+        }
+    }
+
+    let preset = Preset {
+        id: id.clone(),
+        name: name.clone(),
+        endpoints,
+        app_routes,
+        app_loopbacks,
+    };
+
+    if let Some(existing) = guard.config.presets.iter_mut().find(|p| p.id == id) {
+        *existing = preset;
+    } else {
+        guard.config.presets.push(preset);
+    }
+    guard.config.active_preset_id = Some(id.clone());
+    let path = guard.config_path.clone();
+    let res = guard.config.save_to_file(&path);
+    log_info!("SaveCurrentAsPreset(id={id}, name='{name}')");
+    ipc_ok(res)
 }
 
 fn apply_primary_volume(

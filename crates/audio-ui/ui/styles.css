@@ -112,6 +112,70 @@ body {
   gap: 6px;
 }
 
+.preset-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.preset-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.preset-pill button {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 8px;
+}
+
+.preset-pill.active button {
+  color: #fff;
+}
+
+.preset-del-btn {
+  opacity: 0.65;
+  padding: 4px 6px !important;
+  font-size: 11px;
+}
+
+.preset-del-btn:hover {
+  opacity: 1;
+  color: #fca5a5 !important;
+}
+
+.preset-save-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.preset-save-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preset-save-form.collapsed {
+  display: none;
+}
+
+.preset-save-form input[type="text"] {
+  width: 120px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
