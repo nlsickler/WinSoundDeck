@@ -12,8 +12,34 @@ function buildEndpointCard(onRefresh) {
   title.className = "card-title";
   const meta = document.createElement("div");
   meta.className = "card-meta";
-  const badgesSpan = document.createElement("span");
-  badgesSpan.className = "card-meta";
+  const defaultBtn = document.createElement("button");
+  defaultBtn.className = "btn-role btn-role-default";
+  defaultBtn.textContent = "Default";
+  defaultBtn.title = "Set as OS Default device (Multimedia & Console)";
+  defaultBtn.onclick = async () => {
+    const ep = card._item;
+    if (!ep.is_default_multimedia) {
+      await invoke("set_default_endpoint", {
+        endpointId: ep.id,
+        role: "Multimedia",
+      });
+      await onRefresh(true);
+    }
+  };
+  const commsBtn = document.createElement("button");
+  commsBtn.className = "btn-role btn-role-comms";
+  commsBtn.textContent = "Comms";
+  commsBtn.title = "Set as OS Communications Default device";
+  commsBtn.onclick = async () => {
+    const ep = card._item;
+    if (!ep.is_default_communications) {
+      await invoke("set_default_endpoint", {
+        endpointId: ep.id,
+        role: "Communications",
+      });
+      await onRefresh(true);
+    }
+  };
   const eyeBtn = document.createElement("button");
   eyeBtn.className = "btn-icon-eye";
   eyeBtn.textContent = "👁️";
@@ -25,7 +51,7 @@ function buildEndpointCard(onRefresh) {
     });
     await onRefresh(true);
   };
-  meta.append(badgesSpan, eyeBtn);
+  meta.append(defaultBtn, commsBtn, eyeBtn);
   header.append(title, meta);
 
   const row = document.createElement("div");
@@ -73,12 +99,12 @@ function updateEndpointCard(card, ep) {
   card._item = ep;
   card.querySelector(".card-title").textContent = ep.friendly_name;
 
-  const meta = card.querySelector(".card-meta > span.card-meta");
-  const badges = [];
-  if (ep.is_default_multimedia) badges.push('<span class="badge-tag">Default</span>');
-  if (ep.is_default_communications) badges.push('<span class="badge-tag">Comms</span>');
-  const nextHtml = badges.join("");
-  if (meta.innerHTML !== nextHtml) meta.innerHTML = nextHtml;
+  card
+    .querySelector(".btn-role-default")
+    .classList.toggle("active", Boolean(ep.is_default_multimedia));
+  card
+    .querySelector(".btn-role-comms")
+    .classList.toggle("active", Boolean(ep.is_default_communications));
 
   const eyeBtn = card.querySelector(".btn-icon-eye");
   eyeBtn.style.display = ep.flow === "Render" ? "" : "none";

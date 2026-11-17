@@ -474,6 +474,21 @@ button:hover {
   text-decoration: line-through;
 }
 
+.btn-role {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.btn-role.active {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: var(--accent);
+  color: #c7d2fe;
+}
+
 .primary-slot {
   width: 20px;
   text-align: center;

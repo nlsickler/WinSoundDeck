@@ -6,7 +6,7 @@ use audio_core::ipc::{IpcRequest, IpcResponse, PresetSummary};
 use audio_core::{
     log_debug, log_error, log_info, log_warn, resolve_root_exe_name, AppLoopbackRule,
     AppPolicyClient, AppRouteRule, AppVolumeRule, AudioEnumerator, DataFlow, DeviceRole,
-    EndpointTarget, LoopbackTee, Preset, PresetEngine,
+    EndpointTarget, LoopbackTee, PolicyClient, Preset, PresetEngine,
 };
 
 use crate::app_settings::{ActiveLoopback, SecondaryOutputSetting};
@@ -295,6 +295,20 @@ pub fn handle_request(
                 guard.app_settings.save(&path);
             }
             (IpcResponse::Ok, false)
+        }
+        IpcRequest::SetDefaultEndpoint { endpoint_id, role } => {
+            let res = PolicyClient::new().and_then(|policy| {
+                if role == DeviceRole::Multimedia {
+                    policy.set_default_endpoint(&endpoint_id, DeviceRole::Console)?;
+                    policy.set_default_endpoint(&endpoint_id, DeviceRole::Multimedia)
+                } else {
+                    policy.set_default_endpoint(&endpoint_id, role)
+                }
+            });
+            if res.is_ok() {
+                log_info!("SetDefaultEndpoint(endpoint={endpoint_id}, role={role:?})");
+            }
+            ipc_ok(res)
         }
     }
 }

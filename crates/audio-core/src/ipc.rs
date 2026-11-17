@@ -15,7 +15,7 @@ use windows::Win32::System::Pipes::{
     PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 
-use crate::DataFlow;
+use crate::{DataFlow, DeviceRole};
 
 pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\audio-mixer-daemon";
 
@@ -92,6 +92,10 @@ pub enum IpcRequest {
     SetEndpointHidden {
         endpoint_id: String,
         hidden: bool,
+    },
+    SetDefaultEndpoint {
+        endpoint_id: String,
+        role: DeviceRole,
     },
     Shutdown,
 }

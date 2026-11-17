@@ -8,7 +8,7 @@ use audio_core::ipc::{
     install_ctrl_c_daemon_shutdown, send_ipc_request, DaemonStatus, IpcRequest, IpcResponse,
     PresetSummary, DEFAULT_PIPE_NAME,
 };
-use audio_core::DataFlow;
+use audio_core::{DataFlow, DeviceRole};
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -229,6 +229,12 @@ fn set_endpoint_hidden(endpoint_id: String, hidden: bool) -> Result<(), String> 
     Ok(())
 }
 
+#[tauri::command]
+fn set_default_endpoint(endpoint_id: String, role: DeviceRole) -> Result<(), String> {
+    ipc_call(IpcRequest::SetDefaultEndpoint { endpoint_id, role })?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -370,6 +376,7 @@ fn main() {
             stop_loopback,
             set_app_output_volume,
             set_endpoint_hidden,
+            set_default_endpoint,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
