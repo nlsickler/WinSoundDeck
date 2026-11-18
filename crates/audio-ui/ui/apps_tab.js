@@ -6,17 +6,27 @@ const collapsedActiveIds = new Set();
 const expandedInactiveIds = new Set();
 const explicitlyUncheckedIds = new Set();
 const rememberedOutputVolumes = new Map();
-let showInactiveApps = false;
+let showIdleApps = false;
+let showOfflineApps = false;
 
 function appIdFor(s) {
   return s.app_key || String(s.pid);
 }
 
+function appDisplayName(s) {
+  return s.display_name || s.root_exe_name || s.exe_name || "";
+}
+
 export function setupAppsTabControls(onRefresh) {
-  document.getElementById("apps-inactive-toggle").onclick = () => {
-    showInactiveApps = !showInactiveApps;
-    document.getElementById("apps-inactive-chevron").textContent = showInactiveApps ? "▾" : "▸";
-    document.getElementById("apps-inactive-list").classList.toggle("collapsed", !showInactiveApps);
+  document.getElementById("apps-idle-toggle").onclick = () => {
+    showIdleApps = !showIdleApps;
+    document.getElementById("apps-idle-chevron").textContent = showIdleApps ? "▾" : "▸";
+    document.getElementById("apps-idle-list").classList.toggle("collapsed", !showIdleApps);
+  };
+  document.getElementById("apps-offline-toggle").onclick = () => {
+    showOfflineApps = !showOfflineApps;
+    document.getElementById("apps-offline-chevron").textContent = showOfflineApps ? "▾" : "▸";
+    document.getElementById("apps-offline-list").classList.toggle("collapsed", !showOfflineApps);
   };
   const clearBtn = document.getElementById("apps-clear-unpinned-btn");
   if (clearBtn) {
@@ -401,23 +411,43 @@ export function renderAppsTab(
   onRefresh
 ) {
   const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
-  const active = sessions.filter((s) => s.is_active);
-  const inactive = sessions.filter((s) => !s.is_active);
+  const byName = (a, b) =>
+    appDisplayName(a).localeCompare(appDisplayName(b), undefined, { sensitivity: "base" });
+  const byPinnedThenName = (a, b) => {
+    const pinDiff = Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned));
+    return pinDiff !== 0 ? pinDiff : byName(a, b);
+  };
+
+  const playing = sessions.filter((s) => s.is_active);
+  const idle = sessions.filter((s) => !s.is_active && s.pid > 0).sort(byName);
+  const offline = sessions.filter((s) => !s.is_active && s.pid === 0).sort(byPinnedThenName);
 
   renderAppsList(
     document.getElementById("apps-active-list"),
-    active,
+    playing,
     renderEndpoints,
     loopbacks,
     includeDisconnected,
     onRefresh
   );
-  document.getElementById("apps-inactive-count").textContent = String(inactive.length);
-  document.getElementById("apps-inactive-group").style.display =
-    inactive.length > 0 ? "" : "none";
+
+  document.getElementById("apps-idle-count").textContent = String(idle.length);
+  document.getElementById("apps-idle-group").style.display = idle.length > 0 ? "" : "none";
   renderAppsList(
-    document.getElementById("apps-inactive-list"),
-    inactive,
+    document.getElementById("apps-idle-list"),
+    idle,
+    renderEndpoints,
+    loopbacks,
+    includeDisconnected,
+    onRefresh
+  );
+
+  document.getElementById("apps-offline-count").textContent = String(offline.length);
+  document.getElementById("apps-offline-group").style.display =
+    offline.length > 0 ? "" : "none";
+  renderAppsList(
+    document.getElementById("apps-offline-list"),
+    offline,
     renderEndpoints,
     loopbacks,
     includeDisconnected,

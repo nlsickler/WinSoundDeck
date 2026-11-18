@@ -52,18 +52,27 @@
   <main class="container">
     <section class="tab-panel active" id="tab-apps" role="tabpanel">
       <div class="io-group">
-        <h2>Active</h2>
+        <h2>Playing</h2>
         <div id="apps-active-list" class="card-list"></div>
       </div>
-      <div class="io-group" id="apps-inactive-group">
+      <div class="io-group" id="apps-idle-group">
         <div class="inactive-header-bar">
-          <h2 class="collapsible-heading" id="apps-inactive-toggle">
-            <span class="chevron" id="apps-inactive-chevron">▸</span>
-            Inactive <span id="apps-inactive-count" class="tab-count">0</span>
+          <h2 class="collapsible-heading" id="apps-idle-toggle">
+            <span class="chevron" id="apps-idle-chevron">▸</span>
+            Idle <span id="apps-idle-count" class="tab-count">0</span>
           </h2>
-          <button id="apps-clear-unpinned-btn" class="btn-clear-unpinned" title="Clear unpinned inactive apps">Clear Unpinned</button>
         </div>
-        <div id="apps-inactive-list" class="card-list collapsed"></div>
+        <div id="apps-idle-list" class="card-list collapsed"></div>
+      </div>
+      <div class="io-group" id="apps-offline-group">
+        <div class="inactive-header-bar">
+          <h2 class="collapsible-heading" id="apps-offline-toggle">
+            <span class="chevron" id="apps-offline-chevron">▸</span>
+            Offline <span id="apps-offline-count" class="tab-count">0</span>
+          </h2>
+          <button id="apps-clear-unpinned-btn" class="btn-clear-unpinned" title="Clear unpinned offline apps">Clear Unpinned</button>
+        </div>
+        <div id="apps-offline-list" class="card-list collapsed"></div>
       </div>
     </section>
 
