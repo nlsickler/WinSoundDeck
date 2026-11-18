@@ -25,11 +25,9 @@ export function isUserInteracting() {
 export function setupTabs() {
   const buttons = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".tab-panel");
-  const settingsBtn = document.getElementById("settings-btn");
   for (const btn of buttons) {
     btn.onclick = () => {
       const tab = btn.dataset.tab;
-      if (settingsBtn) settingsBtn.classList.remove("active");
       for (const b of buttons) {
         const selected = b.dataset.tab === tab;
         b.classList.toggle("active", selected);

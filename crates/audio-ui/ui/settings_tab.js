@@ -3,27 +3,6 @@ import { syncKeyedList } from "./dom.js";
 const { invoke } = window.__TAURI__.core;
 
 export function setupSettingsControls() {
-  const settingsBtn = document.getElementById("settings-btn");
-  const tabBtns = document.querySelectorAll(".tab-btn");
-  const panels = document.querySelectorAll(".tab-panel");
-
-  settingsBtn.onclick = () => {
-    const isOpen = document.getElementById("tab-settings").classList.contains("active");
-    if (isOpen) {
-      // Return to Applications tab
-      tabBtns[0].click();
-      return;
-    }
-    settingsBtn.classList.add("active");
-    for (const b of tabBtns) {
-      b.classList.remove("active");
-      b.setAttribute("aria-selected", "false");
-    }
-    for (const p of panels) {
-      p.classList.toggle("active", p.id === "tab-settings");
-    }
-  };
-
   const subtabBtns = document.querySelectorAll(".subtab-btn");
   const outputsList = document.getElementById("settings-outputs-list");
   const inputsList = document.getElementById("settings-inputs-list");
@@ -79,8 +58,10 @@ function updateAllowlistRow(row, ep) {
 }
 
 export function renderSettingsTab(endpoints, onRefresh) {
-  const outputs = endpoints.filter((e) => e.flow === "Render");
-  const inputs = endpoints.filter((e) => e.flow === "Capture");
+  const byName = (a, b) =>
+    a.friendly_name.localeCompare(b.friendly_name, undefined, { sensitivity: "base" });
+  const outputs = endpoints.filter((e) => e.flow === "Render").sort(byName);
+  const inputs = endpoints.filter((e) => e.flow === "Capture").sort(byName);
   syncKeyedList(
     document.getElementById("settings-outputs-list"),
     outputs,

@@ -223,6 +223,10 @@ body {
   cursor: pointer;
 }
 
+.tab-btn-right {
+  margin-left: auto;
+}
+
 .tab-btn:hover {
   color: var(--text);
 }
