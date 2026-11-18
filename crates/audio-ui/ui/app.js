@@ -16,8 +16,7 @@ async function refreshAll(force = false) {
       invoke("get_status"),
       invoke("list_presets"),
     ]);
-    badge.textContent = "Daemon Connected";
-    badge.className = "badge badge-ok";
+    badge.className = "badge badge-ok collapsed";
 
     includeDisconnected = Boolean(status.include_disconnected);
     const discBtn = document.getElementById("disconnected-btn");
@@ -42,7 +41,8 @@ async function refreshAll(force = false) {
     document.getElementById("count-apps").textContent = String(appSessions.length);
     document.getElementById("count-io").textContent = String(visibleIO.length);
   } catch (err) {
-    badge.textContent = "Daemon Offline";
+    badge.textContent = "⚠️";
+    badge.title = "Daemon Offline";
     badge.className = "badge badge-offline";
     console.error("IPC error:", err);
   }
