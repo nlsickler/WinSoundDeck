@@ -23,7 +23,7 @@ async function refreshAll(force = false) {
     const discBtn = document.getElementById("disconnected-btn");
     discBtn.classList.toggle("active", includeDisconnected);
 
-    const appSessions = status.sessions.filter((s) => s.pid !== 0);
+    const appSessions = status.sessions.filter((s) => s.pid !== 0 || Boolean(s.app_key));
     const visibleIO = status.endpoints.filter(
       (e) => e.is_allowed && (includeDisconnected || e.is_connected)
     );
