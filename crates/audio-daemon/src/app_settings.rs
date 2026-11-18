@@ -35,7 +35,7 @@ pub struct AppSettingsStore {
     #[serde(default)]
     pub apps: HashMap<String, AppPersistentSettings>,
     #[serde(default)]
-    pub hidden_endpoints: HashSet<String>,
+    pub allowed_endpoints: Option<HashSet<String>>,
     #[serde(default)]
     pub include_disconnected: bool,
 }

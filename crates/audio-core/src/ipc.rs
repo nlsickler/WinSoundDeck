@@ -89,9 +89,9 @@ pub enum IpcRequest {
         volume: f32,
         finalize: bool,
     },
-    SetEndpointHidden {
+    SetEndpointAllowed {
         endpoint_id: String,
-        hidden: bool,
+        allowed: bool,
     },
     SetDefaultEndpoint {
         endpoint_id: String,
@@ -112,8 +112,8 @@ pub struct EndpointStatus {
     pub muted: bool,
     pub is_default_multimedia: bool,
     pub is_default_communications: bool,
-    #[serde(default)]
-    pub hidden: bool,
+    #[serde(default = "default_true")]
+    pub is_allowed: bool,
     #[serde(default = "default_true")]
     pub is_connected: bool,
 }

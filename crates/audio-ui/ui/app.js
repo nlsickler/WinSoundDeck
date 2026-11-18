@@ -2,6 +2,7 @@ import { isUserInteracting, setupTabs } from "./dom.js";
 import { renderAppsTab, setupAppsTabControls } from "./apps_tab.js";
 import { renderIOTab } from "./io_tab.js";
 import { renderPresets, setupPresetsBar } from "./presets_bar.js";
+import { renderSettingsTab, setupSettingsControls } from "./settings_tab.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -23,13 +24,23 @@ async function refreshAll(force = false) {
     discBtn.classList.toggle("active", includeDisconnected);
 
     const appSessions = status.sessions.filter((s) => s.pid !== 0);
+    const visibleIO = status.endpoints.filter(
+      (e) => e.is_allowed && (includeDisconnected || e.is_connected)
+    );
 
     renderPresets(presetData, refreshAll);
-    renderAppsTab(appSessions, status.endpoints, status.loopbacks || [], refreshAll);
-    renderIOTab(status.endpoints, refreshAll);
+    renderAppsTab(
+      appSessions,
+      status.endpoints,
+      status.loopbacks || [],
+      includeDisconnected,
+      refreshAll
+    );
+    renderIOTab(status.endpoints, includeDisconnected, refreshAll);
+    renderSettingsTab(status.endpoints, refreshAll);
 
     document.getElementById("count-apps").textContent = String(appSessions.length);
-    document.getElementById("count-io").textContent = String(status.endpoints.length);
+    document.getElementById("count-io").textContent = String(visibleIO.length);
   } catch (err) {
     badge.textContent = "Daemon Offline";
     badge.className = "badge badge-offline";
@@ -40,6 +51,7 @@ async function refreshAll(force = false) {
 setupTabs();
 setupAppsTabControls();
 setupPresetsBar(refreshAll);
+setupSettingsControls();
 document.getElementById("disconnected-btn").onclick = async () => {
   await invoke("set_include_disconnected", { include: !includeDisconnected });
   await refreshAll(true);

@@ -281,15 +281,28 @@ pub fn handle_request(
             }
             ipc_ok(res)
         }
-        IpcRequest::SetEndpointHidden {
+        IpcRequest::SetEndpointAllowed {
             endpoint_id,
-            hidden,
+            allowed,
         } => {
             if let Ok(mut guard) = state.lock() {
-                if hidden {
-                    guard.app_settings.hidden_endpoints.insert(endpoint_id);
-                } else {
-                    guard.app_settings.hidden_endpoints.remove(&endpoint_id);
+                if guard.app_settings.allowed_endpoints.is_none() {
+                    let mut initial = std::collections::HashSet::new();
+                    for flow in [DataFlow::Render, DataFlow::Capture] {
+                        if let Ok(eps) = enumerator.list_active_endpoints(flow) {
+                            for ep in eps {
+                                initial.insert(ep.id);
+                            }
+                        }
+                    }
+                    guard.app_settings.allowed_endpoints = Some(initial);
+                }
+                if let Some(ref mut set) = guard.app_settings.allowed_endpoints {
+                    if allowed {
+                        set.insert(endpoint_id);
+                    } else {
+                        set.remove(&endpoint_id);
+                    }
                 }
                 let path = guard.app_settings_path.clone();
                 guard.app_settings.save(&path);

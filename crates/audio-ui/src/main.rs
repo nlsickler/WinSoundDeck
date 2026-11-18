@@ -221,10 +221,10 @@ fn set_app_output_volume(
 }
 
 #[tauri::command]
-fn set_endpoint_hidden(endpoint_id: String, hidden: bool) -> Result<(), String> {
-    ipc_call(IpcRequest::SetEndpointHidden {
+fn set_endpoint_allowed(endpoint_id: String, allowed: bool) -> Result<(), String> {
+    ipc_call(IpcRequest::SetEndpointAllowed {
         endpoint_id,
-        hidden,
+        allowed,
     })?;
     Ok(())
 }
@@ -381,7 +381,7 @@ fn main() {
             set_loopback_mute,
             stop_loopback,
             set_app_output_volume,
-            set_endpoint_hidden,
+            set_endpoint_allowed,
             set_default_endpoint,
             set_include_disconnected,
         ])

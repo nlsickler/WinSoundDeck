@@ -40,18 +40,7 @@ function buildEndpointCard(onRefresh) {
       await onRefresh(true);
     }
   };
-  const eyeBtn = document.createElement("button");
-  eyeBtn.className = "btn-icon-eye";
-  eyeBtn.textContent = "👁️";
-  eyeBtn.onclick = async () => {
-    const ep = card._item;
-    await invoke("set_endpoint_hidden", {
-      endpointId: ep.id,
-      hidden: !ep.hidden,
-    });
-    await onRefresh(true);
-  };
-  meta.append(defaultBtn, commsBtn, eyeBtn);
+  meta.append(defaultBtn, commsBtn);
   header.append(title, meta);
 
   const row = document.createElement("div");
@@ -111,11 +100,6 @@ function updateEndpointCard(card, ep) {
   commsBtn.classList.toggle("active", Boolean(ep.is_default_communications));
   commsBtn.disabled = disconnected;
 
-  const eyeBtn = card.querySelector(".btn-icon-eye");
-  eyeBtn.style.display = ep.flow === "Render" ? "" : "none";
-  eyeBtn.classList.toggle("hidden-ep", Boolean(ep.hidden));
-  eyeBtn.title = ep.hidden ? "Show in Applications tab" : "Hide from Applications tab";
-
   const muteBtn = card.querySelector(".btn-mute");
   muteBtn.classList.toggle("muted", ep.muted);
   muteBtn.textContent = ep.muted ? "Muted" : "Mute";
@@ -130,9 +114,12 @@ function updateEndpointCard(card, ep) {
   card.querySelector(".vol-label").textContent = disconnected ? "--" : `${pctVal}%`;
 }
 
-export function renderIOTab(endpoints, onRefresh) {
-  const outputs = endpoints.filter((e) => e.flow === "Render");
-  const inputs = endpoints.filter((e) => e.flow === "Capture");
+export function renderIOTab(endpoints, includeDisconnected, onRefresh) {
+  const visible = endpoints.filter(
+    (e) => e.is_allowed && (includeDisconnected || e.is_connected)
+  );
+  const outputs = visible.filter((e) => e.flow === "Render");
+  const inputs = visible.filter((e) => e.flow === "Capture");
   syncKeyedList(
     document.getElementById("outputs-list"),
     outputs,

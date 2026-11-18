@@ -49,17 +49,14 @@ pub fn build_daemon_status(
     state: &DaemonState,
 ) -> audio_core::Result<DaemonStatus> {
     let active_id = state.config.active_preset_id.clone();
-    let include_disconnected = state.app_settings.include_disconnected;
-    let mut status = collect_raw_status(
-        enumerator,
-        active_id,
-        &state.default_endpoints,
-        include_disconnected,
-    )?;
-    status.include_disconnected = include_disconnected;
+    let mut status = collect_raw_status(enumerator, active_id, &state.default_endpoints)?;
+    status.include_disconnected = state.app_settings.include_disconnected;
 
     for ep in &mut status.endpoints {
-        ep.hidden = state.app_settings.hidden_endpoints.contains(&ep.id);
+        ep.is_allowed = match state.app_settings.allowed_endpoints {
+            Some(ref set) => set.contains(&ep.id),
+            None => ep.is_connected,
+        };
     }
 
     let mut merged_loopbacks: Vec<LoopbackStatus> = state
@@ -124,7 +121,6 @@ fn collect_raw_status(
     enumerator: &AudioEnumerator,
     active_preset_id: Option<String>,
     default_endpoints: &HashMap<(DataFlow, DeviceRole), String>,
-    include_disconnected: bool,
 ) -> audio_core::Result<DaemonStatus> {
     let def_render_mm = default_endpoints
         .get(&(DataFlow::Render, DeviceRole::Multimedia))
@@ -168,7 +164,7 @@ fn collect_raw_status(
     let mut session_order: Vec<u32> = Vec::new();
 
     for flow in [DataFlow::Render, DataFlow::Capture] {
-        for ep in enumerator.list_endpoints(flow, include_disconnected)? {
+        for ep in enumerator.list_endpoints(flow, true)? {
             let vol_state = ep
                 .master_volume()
                 .unwrap_or(EndpointVolumeState {
@@ -187,7 +183,7 @@ fn collect_raw_status(
                 muted: vol_state.muted,
                 is_default_multimedia: ep.id == *mm_id,
                 is_default_communications: ep.id == *comm_id,
-                hidden: false,
+                is_allowed: true,
                 is_connected: ep.is_connected,
             });
 
@@ -245,6 +241,6 @@ fn collect_raw_status(
         endpoints,
         sessions,
         loopbacks: Vec::new(),
-        include_disconnected,
+        include_disconnected: false,
     })
 }

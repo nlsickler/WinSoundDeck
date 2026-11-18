@@ -14,6 +14,7 @@
     </div>
     <div class="topbar-actions">
       <button id="disconnected-btn" class="btn-role" title="Include disconnected audio devices">🔌 Disconnected</button>
+      <button id="settings-btn" class="btn-icon-action" title="Settings">⚙️</button>
       <button id="refresh-btn" class="btn-secondary" title="Refresh">Refresh</button>
     </div>
   </header>
@@ -70,6 +71,18 @@
         <h2>Inputs</h2>
         <div id="inputs-list" class="card-list"></div>
       </div>
+    </section>
+
+    <section class="tab-panel" id="tab-settings" role="tabpanel">
+      <div class="settings-header">
+        <h2>Device Allowlist</h2>
+        <div class="settings-subtabs">
+          <button class="subtab-btn active" data-subtab="outputs">Outputs</button>
+          <button class="subtab-btn" data-subtab="inputs">Inputs</button>
+        </div>
+      </div>
+      <div id="settings-outputs-list" class="card-list"></div>
+      <div id="settings-inputs-list" class="card-list collapsed"></div>
     </section>
   </main>
 

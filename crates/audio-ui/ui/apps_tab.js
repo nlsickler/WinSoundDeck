@@ -237,7 +237,14 @@ function buildRoutingOutputRow(onRefresh) {
   return row;
 }
 
-function renderAppsList(container, sessions, renderEndpoints, loopbacks, onRefresh) {
+function renderAppsList(
+  container,
+  sessions,
+  renderEndpoints,
+  loopbacks,
+  includeDisconnected,
+  onRefresh
+) {
   syncKeyedList(
     container,
     sessions,
@@ -280,7 +287,7 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks, onRefre
 
       const visibleEndpoints = renderEndpoints.filter(
         (ep) =>
-          !ep.hidden ||
+          (ep.is_allowed && (includeDisconnected || ep.is_connected)) ||
           ep.id === s.endpoint_id ||
           activeLoopbacks.some((lb) => lb.target_endpoint_id === ep.id)
       );
@@ -332,7 +339,13 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks, onRefre
   );
 }
 
-export function renderAppsTab(sessions, endpoints, loopbacks, onRefresh) {
+export function renderAppsTab(
+  sessions,
+  endpoints,
+  loopbacks,
+  includeDisconnected,
+  onRefresh
+) {
   const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
   const active = sessions.filter((s) => s.is_active);
   const inactive = sessions.filter((s) => !s.is_active);
@@ -342,6 +355,7 @@ export function renderAppsTab(sessions, endpoints, loopbacks, onRefresh) {
     active,
     renderEndpoints,
     loopbacks,
+    includeDisconnected,
     onRefresh
   );
   document.getElementById("apps-inactive-count").textContent = String(inactive.length);
@@ -352,6 +366,7 @@ export function renderAppsTab(sessions, endpoints, loopbacks, onRefresh) {
     inactive,
     renderEndpoints,
     loopbacks,
+    includeDisconnected,
     onRefresh
   );
 }
