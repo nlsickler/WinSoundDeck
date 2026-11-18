@@ -60,6 +60,13 @@ pub fn build_daemon_status(
             Some(ref set) => set.contains(&ep.id),
             None => ep.is_connected,
         };
+        if ep.last_seen.is_none() {
+            ep.last_seen = state
+                .app_settings
+                .known_endpoints
+                .get(&ep.id)
+                .and_then(|k| k.last_seen);
+        }
     }
 
     let mut merged_loopbacks: Vec<LoopbackStatus> = state
@@ -250,6 +257,7 @@ fn collect_raw_status(
                 is_default_communications: ep.id == *comm_id,
                 is_allowed: true,
                 is_connected: ep.is_connected,
+                last_seen: None,
             });
 
             if flow != DataFlow::Render || !ep.is_connected {
@@ -331,6 +339,7 @@ fn merge_known_offline_endpoints(
             is_default_communications: false,
             is_allowed: true,
             is_connected: false,
+            last_seen: meta.last_seen,
         });
     }
 }
@@ -351,6 +360,7 @@ mod tests {
             is_default_communications: true,
             is_allowed: true,
             is_connected: true,
+            last_seen: Some(1000),
         }];
         let mut known = HashMap::new();
         known.insert(
@@ -358,6 +368,7 @@ mod tests {
             KnownEndpoint {
                 friendly_name: "Old Name".to_string(),
                 flow: DataFlow::Render,
+                last_seen: Some(500),
             },
         );
         known.insert(
@@ -365,6 +376,7 @@ mod tests {
             KnownEndpoint {
                 friendly_name: "Dock Audio".to_string(),
                 flow: DataFlow::Render,
+                last_seen: Some(900),
             },
         );
 
@@ -375,5 +387,6 @@ mod tests {
         assert_eq!(endpoints[1].id, "dock-usb");
         assert_eq!(endpoints[1].friendly_name, "Dock Audio");
         assert!(!endpoints[1].is_connected);
+        assert_eq!(endpoints[1].last_seen, Some(900));
     }
 }

@@ -243,6 +243,44 @@ fn set_endpoint_allowed(endpoint_id: String, allowed: bool) -> Result<(), String
 }
 
 #[tauri::command]
+fn forget_endpoint(endpoint_id: String) -> Result<(), String> {
+    ipc_call(IpcRequest::ForgetEndpoint { endpoint_id })?;
+    Ok(())
+}
+
+fn pnp_instance_id_for_endpoint(endpoint_id: &str) -> Result<String, String> {
+    let valid = !endpoint_id.is_empty()
+        && endpoint_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '{' | '}' | '.' | '-'));
+    if !valid {
+        return Err(format!("Invalid endpoint ID: '{endpoint_id}'"));
+    }
+    Ok(format!("SWD\\MMDEVAPI\\{endpoint_id}"))
+}
+
+#[tauri::command]
+fn remove_windows_endpoint(endpoint_id: String) -> Result<(), String> {
+    let instance_id = pnp_instance_id_for_endpoint(&endpoint_id)?;
+    let script = format!(
+        "$p = Start-Process -FilePath 'pnputil.exe' -ArgumentList @('/remove-device', '{instance_id}') -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
+    );
+    let status = Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map_err(|e| format!("Failed to launch elevated pnputil: {e}"))?;
+    if !status.success() {
+        return Err(format!(
+            "pnputil /remove-device exited with status {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    ipc_call(IpcRequest::ForgetEndpoint { endpoint_id })?;
+    Ok(())
+}
+
+#[tauri::command]
 fn set_default_endpoint(endpoint_id: String, role: DeviceRole) -> Result<(), String> {
     ipc_call(IpcRequest::SetDefaultEndpoint { endpoint_id, role })?;
     Ok(())
@@ -412,9 +450,27 @@ fn main() {
             set_app_pinned,
             clear_unpinned_apps,
             set_endpoint_allowed,
+            forget_endpoint,
+            remove_windows_endpoint,
             set_default_endpoint,
             set_include_disconnected,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pnp_instance_id_for_endpoint;
+
+    #[test]
+    fn pnp_instance_id_formats_valid_endpoint_and_rejects_injection() {
+        let valid = "{0.0.0.00000000}.{2d70e42c-d838-48f4-966d-8623cd910f4f}";
+        assert_eq!(
+            pnp_instance_id_for_endpoint(valid).unwrap(),
+            format!("SWD\\MMDEVAPI\\{valid}")
+        );
+        assert!(pnp_instance_id_for_endpoint("").is_err());
+        assert!(pnp_instance_id_for_endpoint("foo'; calc.exe").is_err());
+    }
 }

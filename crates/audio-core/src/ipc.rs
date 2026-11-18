@@ -92,6 +92,9 @@ pub enum IpcRequest {
         endpoint_id: String,
         allowed: bool,
     },
+    ForgetEndpoint {
+        endpoint_id: String,
+    },
     SetDefaultEndpoint {
         endpoint_id: String,
         role: DeviceRole,
@@ -115,6 +118,8 @@ pub struct EndpointStatus {
     pub is_allowed: bool,
     #[serde(default = "default_true")]
     pub is_connected: bool,
+    #[serde(default)]
+    pub last_seen: Option<u64>,
 }
 
 fn default_true() -> bool {

@@ -664,29 +664,72 @@ button:hover {
   color: #fff;
 }
 
-.allowlist-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
+.btn-eye {
+  min-width: 28px;
+  padding: 3px 6px;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.35;
 }
 
-.allowlist-left {
+.btn-eye:hover {
+  opacity: 0.85;
+}
+
+.btn-eye.allowed {
+  opacity: 1;
+  background: rgba(99, 102, 241, 0.22);
+  border-color: var(--accent);
+}
+
+.visibility-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.visibility-details.collapsed {
+  display: none;
+}
+
+.visibility-id {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.visibility-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
+  flex-wrap: wrap;
 }
 
-.allowlist-left input[type="checkbox"] {
-  accent-color: var(--accent);
-  cursor: pointer;
-  flex-shrink: 0;
+.visibility-actions.collapsed {
+  display: none;
+}
+
+.visibility-confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.visibility-confirm.collapsed {
+  display: none;
+}
+
+.visibility-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.visibility-error.collapsed {
+  display: none;
 }
 
 .primary-slot {

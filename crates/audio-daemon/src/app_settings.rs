@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use audio_core::ipc::{EndpointStatus, SessionStatus};
 use audio_core::{
@@ -41,6 +42,8 @@ pub struct AppPersistentSettings {
 pub struct KnownEndpoint {
     pub friendly_name: String,
     pub flow: DataFlow,
+    #[serde(default)]
+    pub last_seen: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -190,21 +193,47 @@ impl AppSettingsStore {
     }
 
     pub fn remember_known_endpoints(&mut self, endpoints: &[EndpointStatus], path: &Path) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let mut changed = false;
         for ep in endpoints {
             if !ep.is_connected || ep.id.is_empty() || ep.friendly_name.is_empty() || ep.friendly_name == "<unknown>" {
                 continue;
             }
-            let next = KnownEndpoint {
-                friendly_name: ep.friendly_name.clone(),
-                flow: ep.flow,
-            };
-            if self.known_endpoints.get(&ep.id) != Some(&next) {
-                self.known_endpoints.insert(ep.id.clone(), next);
+            let prev = self.known_endpoints.get(&ep.id);
+            let metadata_changed = prev
+                .map(|p| p.friendly_name != ep.friendly_name || p.flow != ep.flow)
+                .unwrap_or(true);
+            let stale_ts = prev
+                .and_then(|p| p.last_seen)
+                .map(|ts| now.saturating_sub(ts) >= 60)
+                .unwrap_or(true);
+            if metadata_changed || stale_ts {
+                self.known_endpoints.insert(
+                    ep.id.clone(),
+                    KnownEndpoint {
+                        friendly_name: ep.friendly_name.clone(),
+                        flow: ep.flow,
+                        last_seen: Some(now),
+                    },
+                );
                 changed = true;
             }
         }
         if changed {
+            self.save(path);
+        }
+    }
+
+    pub fn forget_endpoint(&mut self, endpoint_id: &str, path: &Path) {
+        let removed_known = self.known_endpoints.remove(endpoint_id).is_some();
+        let removed_allowed = self
+            .allowed_endpoints
+            .as_mut()
+            .is_some_and(|set| set.remove(endpoint_id));
+        if removed_known || removed_allowed {
             self.save(path);
         }
     }
@@ -410,6 +439,7 @@ mod tests {
                 is_default_communications: true,
                 is_allowed: true,
                 is_connected: true,
+                last_seen: None,
             },
             EndpointStatus {
                 id: "ep-stale".to_string(),
@@ -421,6 +451,7 @@ mod tests {
                 is_default_communications: false,
                 is_allowed: false,
                 is_connected: false,
+                last_seen: None,
             },
         ];
 
@@ -428,7 +459,19 @@ mod tests {
         let reloaded = AppSettingsStore::load(&path);
         assert_eq!(reloaded.known_endpoints.len(), 1);
         assert_eq!(reloaded.known_endpoints["ep-dock"].friendly_name, "Dock Speakers");
+        assert!(reloaded.known_endpoints["ep-dock"].last_seen.is_some());
         assert!(!reloaded.known_endpoints.contains_key("ep-stale"));
+
+        let mut store2 = reloaded;
+        store2.allowed_endpoints = Some(["ep-dock".to_string()].into_iter().collect());
+        store2.forget_endpoint("ep-dock", &path);
+        let reloaded2 = AppSettingsStore::load(&path);
+        assert!(!reloaded2.known_endpoints.contains_key("ep-dock"));
+        assert!(!reloaded2
+            .allowed_endpoints
+            .as_ref()
+            .unwrap()
+            .contains("ep-dock"));
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

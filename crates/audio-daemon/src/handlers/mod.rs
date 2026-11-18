@@ -313,6 +313,13 @@ pub fn handle_request(
             }
             (IpcResponse::Ok, false)
         }
+        IpcRequest::ForgetEndpoint { endpoint_id } => {
+            if let Ok(mut guard) = state.lock() {
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.forget_endpoint(&endpoint_id, &path);
+            }
+            (IpcResponse::Ok, false)
+        }
         IpcRequest::SetDefaultEndpoint { endpoint_id, role } => {
             let res = PolicyClient::new().and_then(|policy| {
                 if role == DeviceRole::Multimedia {
