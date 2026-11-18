@@ -53,10 +53,14 @@ pub enum IpcRequest {
     SetSessionMute {
         endpoint_id: String,
         pid: u32,
+        #[serde(default)]
+        app_key: Option<String>,
         muted: bool,
     },
     RouteApp {
         pid: u32,
+        #[serde(default)]
+        app_key: Option<String>,
         flow: DataFlow,
         endpoint_id: String,
     },
@@ -66,6 +70,8 @@ pub enum IpcRequest {
     },
     StartLoopback {
         pid: u32,
+        #[serde(default)]
+        app_key: Option<String>,
         target_endpoint_id: String,
         volume: f32,
     },
@@ -81,14 +87,25 @@ pub enum IpcRequest {
     },
     StopLoopback {
         pid: u32,
+        #[serde(default)]
+        app_key: Option<String>,
         target_endpoint_id: String,
     },
     SetAppOutputVolume {
         pid: u32,
+        #[serde(default)]
+        app_key: Option<String>,
         endpoint_id: String,
         volume: f32,
         finalize: bool,
     },
+    SetAppPinned {
+        pid: u32,
+        #[serde(default)]
+        app_key: Option<String>,
+        pinned: bool,
+    },
+    ClearUnpinnedApps,
     SetEndpointAllowed {
         endpoint_id: String,
         allowed: bool,
@@ -126,12 +143,16 @@ fn default_true() -> bool {
 pub struct SessionStatus {
     pub endpoint_id: String,
     pub pid: u32,
+    #[serde(default)]
+    pub app_key: String,
     pub exe_name: String,
     pub root_exe_name: String,
     #[serde(default)]
     pub display_name: String,
     #[serde(default)]
     pub is_active: bool,
+    #[serde(default)]
+    pub is_pinned: bool,
     pub volume: f32,
     pub muted: bool,
     #[serde(default)]
@@ -141,6 +162,8 @@ pub struct SessionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoopbackStatus {
     pub pid: u32,
+    #[serde(default)]
+    pub app_key: String,
     pub target_endpoint_id: String,
     pub volume: f32,
     pub muted: bool,

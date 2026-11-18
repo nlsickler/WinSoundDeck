@@ -140,19 +140,31 @@ fn set_session_volume(endpoint_id: String, pid: u32, volume: f32) -> Result<(), 
 }
 
 #[tauri::command]
-fn set_session_mute(endpoint_id: String, pid: u32, muted: bool) -> Result<(), String> {
+fn set_session_mute(
+    endpoint_id: String,
+    pid: u32,
+    app_key: Option<String>,
+    muted: bool,
+) -> Result<(), String> {
     ipc_call(IpcRequest::SetSessionMute {
         endpoint_id,
         pid,
+        app_key,
         muted,
     })?;
     Ok(())
 }
 
 #[tauri::command]
-fn route_app(pid: u32, flow: DataFlow, endpoint_id: String) -> Result<(), String> {
+fn route_app(
+    pid: u32,
+    app_key: Option<String>,
+    flow: DataFlow,
+    endpoint_id: String,
+) -> Result<(), String> {
     ipc_call(IpcRequest::RouteApp {
         pid,
+        app_key,
         flow,
         endpoint_id,
     })?;
@@ -166,9 +178,15 @@ fn reset_app_route(pid: u32, flow: DataFlow) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn start_loopback(pid: u32, target_endpoint_id: String, volume: f32) -> Result<(), String> {
+fn start_loopback(
+    pid: u32,
+    app_key: Option<String>,
+    target_endpoint_id: String,
+    volume: f32,
+) -> Result<(), String> {
     ipc_call(IpcRequest::StartLoopback {
         pid,
+        app_key,
         target_endpoint_id,
         volume,
     })?;
@@ -196,9 +214,14 @@ fn set_loopback_mute(pid: u32, target_endpoint_id: String, muted: bool) -> Resul
 }
 
 #[tauri::command]
-fn stop_loopback(pid: u32, target_endpoint_id: String) -> Result<(), String> {
+fn stop_loopback(
+    pid: u32,
+    app_key: Option<String>,
+    target_endpoint_id: String,
+) -> Result<(), String> {
     ipc_call(IpcRequest::StopLoopback {
         pid,
+        app_key,
         target_endpoint_id,
     })?;
     Ok(())
@@ -207,16 +230,34 @@ fn stop_loopback(pid: u32, target_endpoint_id: String) -> Result<(), String> {
 #[tauri::command]
 fn set_app_output_volume(
     pid: u32,
+    app_key: Option<String>,
     endpoint_id: String,
     volume: f32,
     finalize: bool,
 ) -> Result<(), String> {
     ipc_call(IpcRequest::SetAppOutputVolume {
         pid,
+        app_key,
         endpoint_id,
         volume,
         finalize,
     })?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_app_pinned(pid: u32, app_key: Option<String>, pinned: bool) -> Result<(), String> {
+    ipc_call(IpcRequest::SetAppPinned {
+        pid,
+        app_key,
+        pinned,
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_unpinned_apps() -> Result<(), String> {
+    ipc_call(IpcRequest::ClearUnpinnedApps)?;
     Ok(())
 }
 
@@ -381,6 +422,8 @@ fn main() {
             set_loopback_mute,
             stop_loopback,
             set_app_output_volume,
+            set_app_pinned,
+            clear_unpinned_apps,
             set_endpoint_allowed,
             set_default_endpoint,
             set_include_disconnected,

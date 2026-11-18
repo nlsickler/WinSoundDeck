@@ -56,10 +56,13 @@
         <div id="apps-active-list" class="card-list"></div>
       </div>
       <div class="io-group" id="apps-inactive-group">
-        <h2 class="collapsible-heading" id="apps-inactive-toggle">
-          <span class="chevron" id="apps-inactive-chevron">▸</span>
-          Inactive <span id="apps-inactive-count" class="tab-count">0</span>
-        </h2>
+        <div class="inactive-header-bar">
+          <h2 class="collapsible-heading" id="apps-inactive-toggle">
+            <span class="chevron" id="apps-inactive-chevron">▸</span>
+            Inactive <span id="apps-inactive-count" class="tab-count">0</span>
+          </h2>
+          <button id="apps-clear-unpinned-btn" class="btn-clear-unpinned" title="Clear unpinned inactive apps">Clear Unpinned</button>
+        </div>
         <div id="apps-inactive-list" class="card-list collapsed"></div>
       </div>
     </section>

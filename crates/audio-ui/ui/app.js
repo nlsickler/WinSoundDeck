@@ -49,7 +49,7 @@ async function refreshAll(force = false) {
 }
 
 setupTabs();
-setupAppsTabControls();
+setupAppsTabControls(refreshAll);
 setupPresetsBar(refreshAll);
 setupSettingsControls();
 document.getElementById("disconnected-btn").onclick = async () => {

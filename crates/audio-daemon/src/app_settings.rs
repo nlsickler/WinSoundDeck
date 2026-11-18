@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use audio_core::ipc::SessionStatus;
 use audio_core::{
     resolve_root_exe_path, AppPolicyClient, AudioEnumerator, DataFlow, DeviceRole, LoopbackHandle,
     LoopbackTee,
@@ -18,6 +19,12 @@ pub struct SecondaryOutputSetting {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppPersistentSettings {
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub root_exe_name: Option<String>,
     #[serde(default)]
     pub primary_endpoint_id: Option<String>,
     #[serde(default)]
@@ -70,22 +77,107 @@ impl AppSettingsStore {
                 let _ = fs::create_dir_all(parent);
             }
         }
-        if let Ok(json) = serde_json::to_string_pretty(self) {
+        // Only persist pinned applications to disk; unpinned apps stay in memory only.
+        let persisted = AppSettingsStore {
+            apps: self
+                .apps
+                .iter()
+                .filter(|(_, cfg)| cfg.pinned)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            allowed_endpoints: self.allowed_endpoints.clone(),
+            include_disconnected: self.include_disconnected,
+        };
+        if let Ok(json) = serde_json::to_string_pretty(&persisted) {
             let _ = fs::write(path, json);
         }
     }
 
     pub fn key_for_pid(pid: u32) -> Option<String> {
+        if pid == 0 {
+            return None;
+        }
         resolve_root_exe_path(pid).map(|p| p.to_ascii_lowercase())
     }
 
+    pub fn resolve_key(pid: u32, app_key: Option<&str>) -> Option<String> {
+        Self::key_for_pid(pid)
+            .or_else(|| app_key.filter(|k| !k.is_empty()).map(|k| k.to_string()))
+    }
+
     pub fn upsert_for_pid(&mut self, pid: u32, path: &Path, f: impl FnOnce(&mut AppPersistentSettings)) {
-        let Some(key) = Self::key_for_pid(pid) else {
+        self.upsert_by_key_or_pid(pid, None, path, f);
+    }
+
+    pub fn upsert_by_key_or_pid(
+        &mut self,
+        pid: u32,
+        app_key: Option<&str>,
+        path: &Path,
+        f: impl FnOnce(&mut AppPersistentSettings),
+    ) {
+        let Some(key) = Self::resolve_key(pid, app_key) else {
             return;
         };
         let entry = self.apps.entry(key).or_default();
         f(entry);
+        if entry.pinned {
+            self.save(path);
+        }
+    }
+
+    pub fn set_app_pinned(&mut self, pid: u32, app_key: Option<&str>, pinned: bool, path: &Path) {
+        let Some(key) = Self::resolve_key(pid, app_key) else {
+            return;
+        };
+        let entry = self.apps.entry(key).or_default();
+        entry.pinned = pinned;
         self.save(path);
+    }
+
+    pub fn clear_unpinned(&mut self) {
+        self.apps.retain(|_, cfg| cfg.pinned);
+    }
+
+    pub fn remember_seen_sessions(&mut self, sessions: &[SessionStatus], path: &Path) {
+        let mut save_needed = false;
+        for s in sessions {
+            if s.pid == 0 || s.app_key.is_empty() {
+                continue;
+            }
+            let entry = self.apps.entry(s.app_key.clone()).or_default();
+            let mut changed = false;
+            if !s.display_name.is_empty()
+                && entry.display_name.as_deref() != Some(s.display_name.as_str())
+            {
+                entry.display_name = Some(s.display_name.clone());
+                changed = true;
+            }
+            if !s.root_exe_name.is_empty()
+                && entry.root_exe_name.as_deref() != Some(s.root_exe_name.as_str())
+            {
+                entry.root_exe_name = Some(s.root_exe_name.clone());
+                changed = true;
+            }
+            if entry.primary_endpoint_id.is_none() && !s.endpoint_id.is_empty() {
+                entry.primary_endpoint_id = Some(s.endpoint_id.clone());
+                changed = true;
+            }
+            if entry.volume.is_none() {
+                entry.volume = Some(s.volume);
+                changed = true;
+            }
+            if entry.muted.is_none() {
+                entry.muted = Some(s.muted);
+                changed = true;
+            }
+            if changed && entry.pinned {
+                save_needed = true;
+            }
+        }
+        if save_needed {
+            self.save(path);
+        }
     }
 
     /// Applies saved per-app settings to `pid` (if present in `self.apps` and not yet applied).

@@ -2,18 +2,30 @@ import { isSliderDragging, pct, setSliderDragging, syncKeyedList } from "./dom.j
 
 const { invoke } = window.__TAURI__.core;
 
-const collapsedActivePids = new Set();
-const expandedInactivePids = new Set();
-const explicitlyUncheckedPids = new Set();
+const collapsedActiveIds = new Set();
+const expandedInactiveIds = new Set();
+const explicitlyUncheckedIds = new Set();
 const rememberedOutputVolumes = new Map();
 let showInactiveApps = false;
 
-export function setupAppsTabControls() {
+function appIdFor(s) {
+  return s.app_key || String(s.pid);
+}
+
+export function setupAppsTabControls(onRefresh) {
   document.getElementById("apps-inactive-toggle").onclick = () => {
     showInactiveApps = !showInactiveApps;
     document.getElementById("apps-inactive-chevron").textContent = showInactiveApps ? "▾" : "▸";
     document.getElementById("apps-inactive-list").classList.toggle("collapsed", !showInactiveApps);
   };
+  const clearBtn = document.getElementById("apps-clear-unpinned-btn");
+  if (clearBtn) {
+    clearBtn.onclick = async (e) => {
+      e.stopPropagation();
+      await invoke("clear_unpinned_apps");
+      if (onRefresh) await onRefresh(true);
+    };
+  }
 }
 
 function buildAppCard(onRefresh) {
@@ -33,6 +45,10 @@ function buildAppCard(onRefresh) {
   title.className = "card-title";
   titleToggle.append(chevron, title);
 
+  const pinBtn = document.createElement("button");
+  pinBtn.className = "btn-pin";
+  pinBtn.textContent = "📌";
+
   const muteBtn = document.createElement("button");
   muteBtn.className = "btn-icon-mute";
 
@@ -44,7 +60,7 @@ function buildAppCard(onRefresh) {
   pidBadge.className = "badge-tag";
   meta.append(outCountBadge, pidBadge);
 
-  header.append(titleToggle, muteBtn, meta);
+  header.append(titleToggle, pinBtn, muteBtn, meta);
 
   const body = document.createElement("div");
   body.className = "routing-outputs";
@@ -54,20 +70,21 @@ function buildAppCard(onRefresh) {
   const toggleExpand = () => {
     const s = card._item;
     if (!s) return;
+    const id = appIdFor(s);
     if (s.is_active) {
-      if (collapsedActivePids.has(s.pid)) {
-        collapsedActivePids.delete(s.pid);
+      if (collapsedActiveIds.has(id)) {
+        collapsedActiveIds.delete(id);
       } else {
-        collapsedActivePids.add(s.pid);
+        collapsedActiveIds.add(id);
       }
-    } else if (expandedInactivePids.has(s.pid)) {
-      expandedInactivePids.delete(s.pid);
+    } else if (expandedInactiveIds.has(id)) {
+      expandedInactiveIds.delete(id);
     } else {
-      expandedInactivePids.add(s.pid);
+      expandedInactiveIds.add(id);
     }
     const expanded = s.is_active
-      ? !collapsedActivePids.has(s.pid)
-      : expandedInactivePids.has(s.pid);
+      ? !collapsedActiveIds.has(id)
+      : expandedInactiveIds.has(id);
     chevron.textContent = expanded ? "▾" : "▸";
     body.classList.toggle("collapsed", !expanded);
   };
@@ -75,12 +92,24 @@ function buildAppCard(onRefresh) {
   meta.onclick = toggleExpand;
   meta.style.cursor = "pointer";
 
+  pinBtn.onclick = async () => {
+    const s = card._item;
+    if (!s) return;
+    await invoke("set_app_pinned", {
+      pid: s.pid,
+      appKey: s.app_key || null,
+      pinned: !s.is_pinned,
+    });
+    await onRefresh(true);
+  };
+
   muteBtn.onclick = async () => {
     const s = card._item;
-    explicitlyUncheckedPids.delete(s.pid);
+    explicitlyUncheckedIds.delete(appIdFor(s));
     await invoke("set_session_mute", {
       endpointId: s.endpoint_id,
       pid: s.pid,
+      appKey: s.app_key || null,
       muted: !s.muted,
     });
     await onRefresh(true);
@@ -118,40 +147,47 @@ function buildRoutingOutputRow(onRefresh) {
     const ctx = row._ctx;
     if (!ctx) return;
     const { session, endpoint, isPrimary, isLoopback, activeLoopbacks } = ctx;
+    const appId = appIdFor(session);
+    const appKey = session.app_key || null;
     if (isPrimary) {
       if (cb.checked) {
-        explicitlyUncheckedPids.delete(session.pid);
+        explicitlyUncheckedIds.delete(appId);
         await invoke("set_session_mute", {
           endpointId: session.endpoint_id,
           pid: session.pid,
+          appKey,
           muted: false,
         });
       } else {
         const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
         if (fallback) {
-          explicitlyUncheckedPids.delete(session.pid);
+          explicitlyUncheckedIds.delete(appId);
           const fallbackVol = fallback.volume;
           await invoke("route_app", {
             pid: session.pid,
+            appKey,
             flow: "Render",
             endpointId: fallback.target_endpoint_id,
           });
           await new Promise((r) => setTimeout(r, 250));
           await invoke("stop_loopback", {
             pid: session.pid,
+            appKey,
             targetEndpointId: fallback.target_endpoint_id,
           });
           await invoke("set_app_output_volume", {
             pid: session.pid,
+            appKey,
             endpointId: fallback.target_endpoint_id,
             volume: fallbackVol,
             finalize: true,
           });
         } else {
-          explicitlyUncheckedPids.add(session.pid);
+          explicitlyUncheckedIds.add(appId);
           await invoke("set_session_mute", {
             endpointId: session.endpoint_id,
             pid: session.pid,
+            appKey,
             muted: true,
           });
         }
@@ -159,12 +195,13 @@ function buildRoutingOutputRow(onRefresh) {
     } else if (cb.checked && !isLoopback) {
       const remembered =
         (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
-        rememberedOutputVolumes.get(`${session.pid}:${endpoint.id}`) ??
+        rememberedOutputVolumes.get(`${appId}:${endpoint.id}`) ??
         0.5;
-      if (explicitlyUncheckedPids.has(session.pid) && activeLoopbacks.length === 0) {
-        explicitlyUncheckedPids.delete(session.pid);
+      if (explicitlyUncheckedIds.has(appId) && activeLoopbacks.length === 0) {
+        explicitlyUncheckedIds.delete(appId);
         await invoke("route_app", {
           pid: session.pid,
+          appKey,
           flow: "Render",
           endpointId: endpoint.id,
         });
@@ -172,10 +209,12 @@ function buildRoutingOutputRow(onRefresh) {
         await invoke("set_session_mute", {
           endpointId: endpoint.id,
           pid: session.pid,
+          appKey,
           muted: false,
         });
         await invoke("set_app_output_volume", {
           pid: session.pid,
+          appKey,
           endpointId: endpoint.id,
           volume: remembered,
           finalize: true,
@@ -183,11 +222,13 @@ function buildRoutingOutputRow(onRefresh) {
       } else {
         await invoke("start_loopback", {
           pid: session.pid,
+          appKey,
           targetEndpointId: endpoint.id,
           volume: remembered,
         });
         await invoke("set_app_output_volume", {
           pid: session.pid,
+          appKey,
           endpointId: endpoint.id,
           volume: remembered,
           finalize: true,
@@ -196,6 +237,7 @@ function buildRoutingOutputRow(onRefresh) {
     } else if (!cb.checked && isLoopback) {
       await invoke("stop_loopback", {
         pid: session.pid,
+        appKey,
         targetEndpointId: endpoint.id,
       });
     }
@@ -209,10 +251,11 @@ function buildRoutingOutputRow(onRefresh) {
     if (!ctx) return;
     const { session, endpoint } = ctx;
     const v = Number(e.target.value) / 100;
-    rememberedOutputVolumes.set(`${session.pid}:${endpoint.id}`, v);
+    rememberedOutputVolumes.set(`${appIdFor(session)}:${endpoint.id}`, v);
     label.textContent = `${e.target.value}%`;
     await invoke("set_app_output_volume", {
       pid: session.pid,
+      appKey: session.app_key || null,
       endpointId: endpoint.id,
       volume: v,
       finalize: false,
@@ -224,9 +267,10 @@ function buildRoutingOutputRow(onRefresh) {
     if (!ctx) return;
     const { session, endpoint } = ctx;
     const v = Number(e.target.value) / 100;
-    rememberedOutputVolumes.set(`${session.pid}:${endpoint.id}`, v);
+    rememberedOutputVolumes.set(`${appIdFor(session)}:${endpoint.id}`, v);
     await invoke("set_app_output_volume", {
       pid: session.pid,
+      appKey: session.app_key || null,
       endpointId: endpoint.id,
       volume: v,
       finalize: true,
@@ -248,10 +292,11 @@ function renderAppsList(
   syncKeyedList(
     container,
     sessions,
-    (s) => `app:${s.pid}`,
+    (s) => `app:${appIdFor(s)}`,
     "No audio sessions.",
     () => buildAppCard(onRefresh),
     (card, s) => {
+      const appId = appIdFor(s);
       card._item = s;
       card.classList.toggle("inactive-card", !s.is_active);
       card.classList.toggle("app-muted", Boolean(s.muted));
@@ -259,7 +304,14 @@ function renderAppsList(
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;
       titleEl.title = name;
-      card.querySelector(".app-header-row > .card-meta > .badge-tag").textContent = `PID ${s.pid}`;
+      card.querySelector(".app-header-row > .card-meta > .badge-tag").textContent =
+        s.pid > 0 ? `PID ${s.pid}` : "Not running";
+
+      const pinBtn = card.querySelector(".btn-pin");
+      pinBtn.classList.toggle("pinned", Boolean(s.is_pinned));
+      pinBtn.title = s.is_pinned
+        ? "Pinned (saved across restarts) — click to unpin"
+        : "Pin app so it stays saved across restarts";
 
       const muteBtn = card.querySelector(".btn-icon-mute");
       muteBtn.classList.toggle("muted", s.muted);
@@ -267,10 +319,12 @@ function renderAppsList(
       muteBtn.title = s.muted ? "Unmute" : "Mute";
 
       if (!s.muted) {
-        explicitlyUncheckedPids.delete(s.pid);
+        explicitlyUncheckedIds.delete(appId);
       }
-      const activeLoopbacks = loopbacks.filter((lb) => lb.pid === s.pid);
-      const primaryChecked = !explicitlyUncheckedPids.has(s.pid);
+      const activeLoopbacks = loopbacks.filter((lb) =>
+        s.pid > 0 ? lb.pid === s.pid : s.app_key && lb.app_key === s.app_key
+      );
+      const primaryChecked = !explicitlyUncheckedIds.has(appId);
       const activeCount = (primaryChecked ? 1 : 0) + activeLoopbacks.length;
       card.querySelector(".badge-muted").textContent = s.muted
         ? "Muted"
@@ -279,8 +333,8 @@ function renderAppsList(
           : `${activeCount} outs`;
 
       const expanded = s.is_active
-        ? !collapsedActivePids.has(s.pid)
-        : expandedInactivePids.has(s.pid);
+        ? !collapsedActiveIds.has(appId)
+        : expandedInactiveIds.has(appId);
       card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
       const body = card.querySelector(".routing-outputs");
       body.classList.toggle("collapsed", !expanded);
@@ -302,7 +356,7 @@ function renderAppsList(
           const isPrimary = ep.id === s.endpoint_id;
           const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
           const isLoopback = Boolean(lb);
-          const enabled = (isPrimary && !explicitlyUncheckedPids.has(s.pid)) || isLoopback;
+          const enabled = (isPrimary && !explicitlyUncheckedIds.has(appId)) || isLoopback;
 
           row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
           row.classList.toggle("disabled", !enabled);
@@ -324,10 +378,10 @@ function renderAppsList(
 
           const savedVol =
             (s.saved_volumes && s.saved_volumes[ep.id]) ??
-            rememberedOutputVolumes.get(`${s.pid}:${ep.id}`) ??
+            rememberedOutputVolumes.get(`${appId}:${ep.id}`) ??
             0.5;
           const vol = isPrimary ? s.volume : isLoopback ? lb.volume : savedVol;
-          rememberedOutputVolumes.set(`${s.pid}:${ep.id}`, vol);
+          rememberedOutputVolumes.set(`${appId}:${ep.id}`, vol);
           const pctVal = pct(vol);
           if (!isSliderDragging() && Number(slider.value) !== pctVal) {
             slider.value = String(pctVal);

@@ -39,9 +39,15 @@ pub fn handle_request(
             (IpcResponse::Ok, true)
         }
         IpcRequest::GetStatus => {
-            let guard = state.lock().expect("state lock");
+            let mut guard = state.lock().expect("state lock");
             match build_daemon_status(enumerator, &guard) {
-                Ok(status) => (IpcResponse::Status(status), false),
+                Ok(status) => {
+                    let path = guard.app_settings_path.clone();
+                    guard
+                        .app_settings
+                        .remember_seen_sessions(&status.sessions, &path);
+                    (IpcResponse::Status(status), false)
+                }
                 Err(e) => (
                     IpcResponse::Error {
                         message: e.to_string(),
@@ -151,49 +157,63 @@ pub fn handle_request(
         IpcRequest::SetSessionMute {
             endpoint_id,
             pid,
+            app_key,
             muted,
         } => {
-            let res = enumerator.list_active_endpoints(DataFlow::Render).and_then(|eps| {
-                if let Some(ep) = eps.into_iter().find(|e| e.id == endpoint_id) {
-                    for s in ep.sessions()? {
-                        if s.pid == pid {
-                            s.set_mute(muted)?;
+            let res = if pid == 0 {
+                Ok(())
+            } else {
+                enumerator.list_active_endpoints(DataFlow::Render).and_then(|eps| {
+                    if let Some(ep) = eps.into_iter().find(|e| e.id == endpoint_id) {
+                        for s in ep.sessions()? {
+                            if s.pid == pid {
+                                s.set_mute(muted)?;
+                            }
                         }
                     }
-                }
-                Ok(())
-            });
+                    Ok(())
+                })
+            };
             if res.is_ok() {
                 if let Ok(mut guard) = state.lock() {
-                    for ((p, _), lb) in guard.loopbacks.iter_mut() {
-                        if *p == pid {
-                            let lb_muted = if muted { true } else { lb.volume <= 0.0 };
-                            lb.muted = lb_muted;
-                            lb.handle.set_mute(lb_muted);
+                    if pid > 0 {
+                        for ((p, _), lb) in guard.loopbacks.iter_mut() {
+                            if *p == pid {
+                                let lb_muted = if muted { true } else { lb.volume <= 0.0 };
+                                lb.muted = lb_muted;
+                                lb.handle.set_mute(lb_muted);
+                            }
                         }
                     }
                     let path = guard.app_settings_path.clone();
-                    guard.app_settings.upsert_for_pid(pid, &path, |s| {
-                        s.muted = Some(muted);
-                        for sec in &mut s.secondary_outputs {
-                            sec.muted = if muted { true } else { sec.volume <= 0.0 };
-                        }
-                    });
+                    guard.app_settings.upsert_by_key_or_pid(
+                        pid,
+                        app_key.as_deref(),
+                        &path,
+                        |s| {
+                            s.muted = Some(muted);
+                            for sec in &mut s.secondary_outputs {
+                                sec.muted = if muted { true } else { sec.volume <= 0.0 };
+                            }
+                        },
+                    );
                 }
             }
             ipc_ok(res)
         }
         IpcRequest::RouteApp {
             pid,
+            app_key,
             flow,
             endpoint_id,
-        } => handle_route_app(enumerator, state, pid, flow, endpoint_id),
+        } => handle_route_app(enumerator, state, pid, app_key, flow, endpoint_id),
         IpcRequest::ResetAppRoute { pid, flow } => handle_reset_app_route(enumerator, state, pid, flow),
         IpcRequest::StartLoopback {
             pid,
+            app_key,
             target_endpoint_id,
             volume,
-        } => handle_start_loopback(enumerator, state, pid, target_endpoint_id, volume),
+        } => handle_start_loopback(enumerator, state, pid, app_key, target_endpoint_id, volume),
         IpcRequest::SetLoopbackVolume {
             pid,
             target_endpoint_id,
@@ -247,20 +267,26 @@ pub fn handle_request(
         }
         IpcRequest::StopLoopback {
             pid,
+            app_key,
             target_endpoint_id,
         } => {
             if let Ok(mut guard) = state.lock() {
-                guard.loopbacks.remove(&(pid, target_endpoint_id.clone()));
+                if pid > 0 {
+                    guard.loopbacks.remove(&(pid, target_endpoint_id.clone()));
+                }
                 let path = guard.app_settings_path.clone();
-                guard.app_settings.upsert_for_pid(pid, &path, |s| {
-                    s.secondary_outputs
-                        .retain(|o| o.endpoint_id != target_endpoint_id);
-                });
+                guard
+                    .app_settings
+                    .upsert_by_key_or_pid(pid, app_key.as_deref(), &path, |s| {
+                        s.secondary_outputs
+                            .retain(|o| o.endpoint_id != target_endpoint_id);
+                    });
             }
             (IpcResponse::Ok, false)
         }
         IpcRequest::SetAppOutputVolume {
             pid,
+            app_key,
             endpoint_id,
             volume,
             finalize,
@@ -272,6 +298,7 @@ pub fn handle_request(
                 enumerator,
                 state,
                 pid,
+                app_key.as_deref(),
                 &endpoint_id,
                 volume,
                 finalize,
@@ -280,6 +307,25 @@ pub fn handle_request(
                 log_error!("SetAppOutputVolume(pid={pid}) failed: {message}");
             }
             ipc_ok(res)
+        }
+        IpcRequest::SetAppPinned {
+            pid,
+            app_key,
+            pinned,
+        } => {
+            if let Ok(mut guard) = state.lock() {
+                let path = guard.app_settings_path.clone();
+                guard
+                    .app_settings
+                    .set_app_pinned(pid, app_key.as_deref(), pinned, &path);
+            }
+            (IpcResponse::Ok, false)
+        }
+        IpcRequest::ClearUnpinnedApps => {
+            if let Ok(mut guard) = state.lock() {
+                guard.app_settings.clear_unpinned();
+            }
+            (IpcResponse::Ok, false)
         }
         IpcRequest::SetEndpointAllowed {
             endpoint_id,
@@ -360,13 +406,15 @@ fn handle_route_app(
     enumerator: &AudioEnumerator,
     state: &Arc<Mutex<DaemonState>>,
     pid: u32,
+    app_key: Option<String>,
     flow: DataFlow,
     endpoint_id: String,
 ) -> (IpcResponse, bool) {
-    let active = enumerator
-        .list_active_endpoints(DataFlow::Render)
-        .map(|eps| is_pid_active(&eps, pid))
-        .unwrap_or(false);
+    let active = pid > 0
+        && enumerator
+            .list_active_endpoints(DataFlow::Render)
+            .map(|eps| is_pid_active(&eps, pid))
+            .unwrap_or(false);
     if active {
         let res = AppPolicyClient::new().and_then(|ap| {
             ap.set_app_endpoint(pid, flow, DeviceRole::Console, &endpoint_id)?;
@@ -382,10 +430,14 @@ fn handle_route_app(
     }
     if let Ok(mut guard) = state.lock() {
         let path = guard.app_settings_path.clone();
-        guard.app_settings.upsert_for_pid(pid, &path, |s| {
-            s.primary_endpoint_id = Some(endpoint_id);
-        });
-        guard.applied_pids.remove(&pid);
+        guard
+            .app_settings
+            .upsert_by_key_or_pid(pid, app_key.as_deref(), &path, |s| {
+                s.primary_endpoint_id = Some(endpoint_id);
+            });
+        if pid > 0 {
+            guard.applied_pids.remove(&pid);
+        }
     }
     (IpcResponse::Ok, false)
 }
@@ -426,34 +478,39 @@ fn handle_start_loopback(
     enumerator: &AudioEnumerator,
     state: &Arc<Mutex<DaemonState>>,
     pid: u32,
+    app_key: Option<String>,
     target_endpoint_id: String,
     volume: f32,
 ) -> (IpcResponse, bool) {
     let vol = volume.clamp(0.0, 1.0);
-    let res = enumerator
-        .list_endpoints(DataFlow::Render, true)
-        .map_err(|e| e.to_string())
-        .and_then(|eps| {
-            let ep = eps
-                .iter()
-                .find(|e| e.id == target_endpoint_id)
-                .ok_or_else(|| format!("Endpoint '{target_endpoint_id}' not found"))?;
-            if !ep.is_connected || !is_pid_active(&eps, pid) {
-                return Ok(None);
-            }
-            let primary = find_primary_session(&eps, pid);
-            if let Some((ref cur_primary, _)) = primary {
-                if cur_primary == &target_endpoint_id {
-                    return Err("Endpoint is already the primary output".to_string());
+    let res = if pid == 0 {
+        Ok(None)
+    } else {
+        enumerator
+            .list_endpoints(DataFlow::Render, true)
+            .map_err(|e| e.to_string())
+            .and_then(|eps| {
+                let ep = eps
+                    .iter()
+                    .find(|e| e.id == target_endpoint_id)
+                    .ok_or_else(|| format!("Endpoint '{target_endpoint_id}' not found"))?;
+                if !ep.is_connected || !is_pid_active(&eps, pid) {
+                    return Ok(None);
                 }
-            }
-            let primary_vol = primary.map(|(_, v)| v).unwrap_or(1.0);
-            let handle = LoopbackTee::start(pid, ep, vol).map_err(|e| e.to_string())?;
-            let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
-            handle.set_linear_gain(ratio.powi(2));
-            handle.set_mute(vol <= 0.0);
-            Ok(Some(handle))
-        });
+                let primary = find_primary_session(&eps, pid);
+                if let Some((ref cur_primary, _)) = primary {
+                    if cur_primary == &target_endpoint_id {
+                        return Err("Endpoint is already the primary output".to_string());
+                    }
+                }
+                let primary_vol = primary.map(|(_, v)| v).unwrap_or(1.0);
+                let handle = LoopbackTee::start(pid, ep, vol).map_err(|e| e.to_string())?;
+                let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
+                handle.set_linear_gain(ratio.powi(2));
+                handle.set_mute(vol <= 0.0);
+                Ok(Some(handle))
+            })
+    };
 
     match res {
         Ok(maybe_handle) => {
@@ -478,23 +535,28 @@ fn handle_start_loopback(
             }
             if let Ok(mut guard) = state.lock() {
                 let path = guard.app_settings_path.clone();
-                guard.app_settings.upsert_for_pid(pid, &path, |s| {
-                    s.output_volumes.insert(target_endpoint_id.clone(), vol);
-                    if let Some(existing) = s
-                        .secondary_outputs
-                        .iter_mut()
-                        .find(|o| o.endpoint_id == target_endpoint_id)
-                    {
-                        existing.volume = vol;
-                        existing.muted = vol <= 0.0;
-                    } else {
-                        s.secondary_outputs.push(SecondaryOutputSetting {
-                            endpoint_id: target_endpoint_id,
-                            volume: vol,
-                            muted: vol <= 0.0,
-                        });
-                    }
-                });
+                guard.app_settings.upsert_by_key_or_pid(
+                    pid,
+                    app_key.as_deref(),
+                    &path,
+                    |s| {
+                        s.output_volumes.insert(target_endpoint_id.clone(), vol);
+                        if let Some(existing) = s
+                            .secondary_outputs
+                            .iter_mut()
+                            .find(|o| o.endpoint_id == target_endpoint_id)
+                        {
+                            existing.volume = vol;
+                            existing.muted = vol <= 0.0;
+                        } else {
+                            s.secondary_outputs.push(SecondaryOutputSetting {
+                                endpoint_id: target_endpoint_id,
+                                volume: vol,
+                                muted: vol <= 0.0,
+                            });
+                        }
+                    },
+                );
             }
             (IpcResponse::Ok, false)
         }
@@ -509,11 +571,39 @@ fn handle_set_app_output_volume(
     enumerator: &AudioEnumerator,
     state: &Arc<Mutex<DaemonState>>,
     pid: u32,
+    app_key: Option<&str>,
     endpoint_id: &str,
     volume: f32,
     finalize: bool,
 ) -> Result<(), String> {
     let vol = volume.clamp(0.0, 1.0);
+    if pid == 0 {
+        let mut guard = state.lock().map_err(|e| e.to_string())?;
+        let ep_key = endpoint_id.to_string();
+        let path = guard.app_settings_path.clone();
+        guard
+            .app_settings
+            .upsert_by_key_or_pid(pid, app_key, &path, |s| {
+                s.output_volumes.insert(ep_key.clone(), vol);
+                let is_primary = s.primary_endpoint_id.as_deref() == Some(ep_key.as_str())
+                    || s.primary_endpoint_id.is_none();
+                if is_primary {
+                    if s.primary_endpoint_id.is_none() {
+                        s.primary_endpoint_id = Some(ep_key.clone());
+                    }
+                    s.volume = Some(vol);
+                    s.muted = Some(vol <= 0.0);
+                } else if let Some(sec) = s
+                    .secondary_outputs
+                    .iter_mut()
+                    .find(|o| o.endpoint_id == ep_key)
+                {
+                    sec.volume = vol;
+                    sec.muted = vol <= 0.0;
+                }
+            });
+        return Ok(());
+    }
     let eps = enumerator
         .list_active_endpoints(DataFlow::Render)
         .map_err(|e| e.to_string())?;

@@ -273,6 +273,32 @@ body {
   margin-bottom: 8px;
 }
 
+.inactive-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.inactive-header-bar .collapsible-heading {
+  margin-bottom: 0;
+}
+
+.btn-clear-unpinned {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.btn-clear-unpinned:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
 .collapsible-heading {
   display: flex;
   align-items: center;
@@ -376,6 +402,24 @@ button:hover {
 .btn-icon-mute.muted {
   background: rgba(239, 68, 68, 0.2);
   border-color: var(--danger);
+}
+
+.btn-pin {
+  min-width: 28px;
+  padding: 3px 5px;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.4;
+}
+
+.btn-pin:hover {
+  opacity: 0.85;
+}
+
+.btn-pin.pinned {
+  opacity: 1;
+  background: rgba(99, 102, 241, 0.22);
+  border-color: var(--accent);
 }
 
 .app-header-row {

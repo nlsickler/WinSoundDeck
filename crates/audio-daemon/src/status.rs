@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use audio_core::ipc::{DaemonStatus, EndpointStatus, LoopbackStatus, SessionStatus};
 use audio_core::{
@@ -64,19 +65,28 @@ pub fn build_daemon_status(
         .iter()
         .map(|((pid, ep_id), lb)| LoopbackStatus {
             pid: *pid,
+            app_key: AppSettingsStore::key_for_pid(*pid).unwrap_or_default(),
             target_endpoint_id: ep_id.clone(),
             volume: lb.volume,
             muted: lb.muted,
         })
         .collect();
 
+    let mut seen_keys = HashSet::new();
     for s in &mut status.sessions {
-        let Some(key) = AppSettingsStore::key_for_pid(s.pid) else {
+        let key = if !s.app_key.is_empty() {
+            s.app_key.clone()
+        } else if let Some(k) = AppSettingsStore::key_for_pid(s.pid) {
+            s.app_key = k.clone();
+            k
+        } else {
             continue;
         };
+        seen_keys.insert(key.clone());
         let Some(cfg) = state.app_settings.apps.get(&key) else {
             continue;
         };
+        s.is_pinned = cfg.pinned;
         s.saved_volumes = cfg.output_volumes.clone();
         for sec in &cfg.secondary_outputs {
             let ep_disconnected = status
@@ -92,6 +102,7 @@ pub fn build_daemon_status(
             {
                 merged_loopbacks.push(LoopbackStatus {
                     pid: s.pid,
+                    app_key: key.clone(),
                     target_endpoint_id: sec.endpoint_id.clone(),
                     volume: sec.volume,
                     muted: sec.muted,
@@ -112,6 +123,72 @@ pub fn build_daemon_status(
             }
         }
     }
+
+    let fallback_render_id = status
+        .endpoints
+        .iter()
+        .find(|e| e.flow == DataFlow::Render && e.is_default_multimedia)
+        .or_else(|| status.endpoints.iter().find(|e| e.flow == DataFlow::Render))
+        .map(|e| e.id.clone())
+        .unwrap_or_default();
+
+    let mut offline_sessions: Vec<SessionStatus> = Vec::new();
+    for (key, cfg) in &state.app_settings.apps {
+        if seen_keys.contains(key) {
+            continue;
+        }
+        let primary_ep = cfg
+            .primary_endpoint_id
+            .clone()
+            .unwrap_or_else(|| fallback_render_id.clone());
+        let vol = cfg
+            .output_volumes
+            .get(&primary_ep)
+            .copied()
+            .or(cfg.volume)
+            .unwrap_or(1.0);
+        let muted = cfg.muted.unwrap_or(false);
+        let fallback_exe = Path::new(key)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(key.as_str())
+            .to_string();
+        let root_exe_name = cfg.root_exe_name.clone().unwrap_or(fallback_exe);
+        let display_name = cfg
+            .display_name
+            .clone()
+            .unwrap_or_else(|| root_exe_name.clone());
+
+        for sec in &cfg.secondary_outputs {
+            merged_loopbacks.push(LoopbackStatus {
+                pid: 0,
+                app_key: key.clone(),
+                target_endpoint_id: sec.endpoint_id.clone(),
+                volume: sec.volume,
+                muted: sec.muted,
+            });
+        }
+
+        offline_sessions.push(SessionStatus {
+            endpoint_id: primary_ep,
+            pid: 0,
+            app_key: key.clone(),
+            exe_name: root_exe_name.clone(),
+            root_exe_name,
+            display_name,
+            is_active: false,
+            is_pinned: cfg.pinned,
+            volume: vol,
+            muted,
+            saved_volumes: cfg.output_volumes.clone(),
+        });
+    }
+    offline_sessions.sort_by(|a, b| {
+        a.display_name
+            .to_ascii_lowercase()
+            .cmp(&b.display_name.to_ascii_lowercase())
+    });
+    status.sessions.extend(offline_sessions);
 
     status.loopbacks = merged_loopbacks;
     Ok(status)
@@ -217,10 +294,12 @@ fn collect_raw_status(
                         SessionStatus {
                             endpoint_id: ep.id.clone(),
                             pid: s.pid,
+                            app_key: AppSettingsStore::key_for_pid(s.pid).unwrap_or_default(),
                             exe_name: s.exe_name,
                             root_exe_name,
                             display_name,
                             is_active: s.is_active,
+                            is_pinned: false,
                             volume: vol,
                             muted,
                             saved_volumes: HashMap::new(),
