@@ -80,6 +80,9 @@ pub fn handle_request(
                     guard
                         .app_settings
                         .remember_seen_sessions(&status.sessions, &path);
+                    guard
+                        .app_settings
+                        .remember_known_endpoints(&status.endpoints, &path);
                     (IpcResponse::Status(status), false)
                 }
                 Err(e) => (

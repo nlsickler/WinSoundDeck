@@ -7,7 +7,7 @@ use audio_core::{
     DeviceRole, EndpointVolumeState,
 };
 
-use crate::app_settings::AppSettingsStore;
+use crate::app_settings::{AppSettingsStore, KnownEndpoint};
 use crate::state::DaemonState;
 
 const INTERNAL_EXES: &[&str] = &["audio-daemon.exe", "audio-ui.exe"];
@@ -52,6 +52,8 @@ pub fn build_daemon_status(
     let active_id = state.config.active_preset_id.clone();
     let mut status = collect_raw_status(enumerator, active_id, &state.default_endpoints)?;
     status.include_disconnected = state.app_settings.include_disconnected;
+
+    merge_known_offline_endpoints(&mut status.endpoints, &state.app_settings.known_endpoints);
 
     for ep in &mut status.endpoints {
         ep.is_allowed = match state.app_settings.allowed_endpoints {
@@ -223,12 +225,17 @@ fn collect_raw_status(
 
     for flow in [DataFlow::Render, DataFlow::Capture] {
         for ep in enumerator.list_endpoints(flow, true)? {
-            let vol_state = ep
-                .master_volume()
-                .unwrap_or(EndpointVolumeState {
+            let vol_state = if ep.is_connected {
+                ep.master_volume().unwrap_or(EndpointVolumeState {
                     volume: 1.0,
                     muted: false,
-                });
+                })
+            } else {
+                EndpointVolumeState {
+                    volume: 1.0,
+                    muted: false,
+                }
+            };
             let (mm_id, comm_id) = match flow {
                 DataFlow::Render => (&def_render_mm, &def_render_comm),
                 DataFlow::Capture => (&def_cap_mm, &def_cap_comm),
@@ -303,4 +310,70 @@ fn collect_raw_status(
         loopbacks: Vec::new(),
         include_disconnected: false,
     })
+}
+
+fn merge_known_offline_endpoints(
+    endpoints: &mut Vec<EndpointStatus>,
+    known: &HashMap<String, KnownEndpoint>,
+) {
+    let present: HashSet<String> = endpoints.iter().map(|e| e.id.clone()).collect();
+    for (id, meta) in known {
+        if present.contains(id) {
+            continue;
+        }
+        endpoints.push(EndpointStatus {
+            id: id.clone(),
+            friendly_name: meta.friendly_name.clone(),
+            flow: meta.flow,
+            volume: 1.0,
+            muted: false,
+            is_default_multimedia: false,
+            is_default_communications: false,
+            is_allowed: true,
+            is_connected: false,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_known_offline_endpoints_adds_missing_without_duplicating_live() {
+        let mut endpoints = vec![EndpointStatus {
+            id: "live-1".to_string(),
+            friendly_name: "Live Speakers".to_string(),
+            flow: DataFlow::Render,
+            volume: 0.5,
+            muted: false,
+            is_default_multimedia: true,
+            is_default_communications: true,
+            is_allowed: true,
+            is_connected: true,
+        }];
+        let mut known = HashMap::new();
+        known.insert(
+            "live-1".to_string(),
+            KnownEndpoint {
+                friendly_name: "Old Name".to_string(),
+                flow: DataFlow::Render,
+            },
+        );
+        known.insert(
+            "dock-usb".to_string(),
+            KnownEndpoint {
+                friendly_name: "Dock Audio".to_string(),
+                flow: DataFlow::Render,
+            },
+        );
+
+        merge_known_offline_endpoints(&mut endpoints, &known);
+        assert_eq!(endpoints.len(), 2);
+        assert_eq!(endpoints[0].friendly_name, "Live Speakers");
+        assert!(endpoints[0].is_connected);
+        assert_eq!(endpoints[1].id, "dock-usb");
+        assert_eq!(endpoints[1].friendly_name, "Dock Audio");
+        assert!(!endpoints[1].is_connected);
+    }
 }

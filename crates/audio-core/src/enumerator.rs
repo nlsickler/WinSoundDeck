@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
     eCapture, eRender, EDataFlow, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE,
-    DEVICE_STATE_ACTIVE, DEVICE_STATE_NOTPRESENT, DEVICE_STATE_UNPLUGGED,
+    DEVICE_STATE_ACTIVE, DEVICE_STATE_DISABLED, DEVICE_STATE_UNPLUGGED,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
@@ -49,13 +49,7 @@ impl AudioEnumerator {
         flow: DataFlow,
         include_disconnected: bool,
     ) -> Result<Vec<AudioEndpoint>> {
-        let mask = if include_disconnected {
-            DEVICE_STATE(
-                DEVICE_STATE_ACTIVE.0 | DEVICE_STATE_UNPLUGGED.0 | DEVICE_STATE_NOTPRESENT.0,
-            )
-        } else {
-            DEVICE_STATE_ACTIVE
-        };
+        let mask = endpoint_state_mask(include_disconnected);
         let collection = unsafe { self.inner.EnumAudioEndpoints(flow.into(), mask)? };
         let count = unsafe { collection.GetCount()? };
         let mut endpoints = Vec::with_capacity(count as usize);
@@ -65,8 +59,11 @@ impl AudioEnumerator {
             let state = unsafe { device.GetState().unwrap_or(DEVICE_STATE_ACTIVE) };
             let is_connected = state == DEVICE_STATE_ACTIVE;
             let id = read_device_id(&device).unwrap_or_else(|_| "<unknown>".to_string());
-            let friendly_name =
-                read_device_friendly_name(&device).unwrap_or_else(|_| "<unknown>".to_string());
+            let friendly_name = match read_device_friendly_name(&device) {
+                Ok(name) => name,
+                Err(e) if is_orphaned_device_error(&e) => continue,
+                Err(_) => "<unknown>".to_string(),
+            };
             endpoints.push(AudioEndpoint::new(id, friendly_name, flow, is_connected, device));
         }
         Ok(endpoints)
@@ -114,4 +111,36 @@ fn read_device_friendly_name(device: &IMMDevice) -> Result<String> {
     let store = unsafe { device.OpenPropertyStore(STGM_READ)? };
     let prop = unsafe { store.GetValue(&PKEY_Device_FriendlyName)? };
     Ok(prop.to_string())
+}
+
+fn is_orphaned_device_error(err: &windows::core::Error) -> bool {
+    const ERROR_NO_SUCH_DEVINST: i32 = 0xE000_020Bu32 as i32;
+    const ERROR_NOT_FOUND_HR: i32 = 0x8007_0490u32 as i32;
+    matches!(err.code().0, ERROR_NO_SUCH_DEVINST | ERROR_NOT_FOUND_HR)
+}
+
+pub(crate) fn endpoint_state_mask(include_disconnected: bool) -> DEVICE_STATE {
+    if include_disconnected {
+        DEVICE_STATE(
+            DEVICE_STATE_ACTIVE.0 | DEVICE_STATE_DISABLED.0 | DEVICE_STATE_UNPLUGGED.0,
+        )
+    } else {
+        DEVICE_STATE_ACTIVE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Media::Audio::DEVICE_STATE_NOTPRESENT;
+
+    #[test]
+    fn endpoint_state_mask_excludes_notpresent_and_includes_disabled_unplugged() {
+        assert_eq!(endpoint_state_mask(false), DEVICE_STATE_ACTIVE);
+        let disconnected_mask = endpoint_state_mask(true);
+        assert_eq!(disconnected_mask.0, 0xB);
+        assert_eq!(disconnected_mask.0 & DEVICE_STATE_NOTPRESENT.0, 0);
+        assert_ne!(disconnected_mask.0 & DEVICE_STATE_DISABLED.0, 0);
+        assert_ne!(disconnected_mask.0 & DEVICE_STATE_UNPLUGGED.0, 0);
+    }
 }

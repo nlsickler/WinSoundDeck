@@ -279,17 +279,16 @@ fn build_tray_icon() -> tauri::image::Image<'static> {
     tauri::image::Image::new_owned(rgba, 32, 32)
 }
 
-fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+fn build_tray_menu_with_presets(
+    app: &AppHandle,
+    preset_data: Option<(Option<String>, Vec<PresetSummary>)>,
+) -> tauri::Result<Menu<tauri::Wry>> {
     let open_item = MenuItem::with_id(app, "open", "Open Mixer", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![Box::new(open_item)];
 
-    if let Ok(IpcResponse::Presets {
-        active_preset_id,
-        presets,
-    }) = ipc_call(IpcRequest::ListPresets)
-    {
+    if let Some((active_preset_id, presets)) = preset_data {
         if !presets.is_empty() {
             items.push(Box::new(PredefinedMenuItem::separator(app)?));
             for p in presets {
@@ -319,6 +318,17 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &refs)
 }
 
+fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let preset_data = match ipc_call(IpcRequest::ListPresets) {
+        Ok(IpcResponse::Presets {
+            active_preset_id,
+            presets,
+        }) => Some((active_preset_id, presets)),
+        _ => None,
+    };
+    build_tray_menu_with_presets(app, preset_data)
+}
+
 fn refresh_tray_menu(app: &AppHandle) {
     if let Some(tray) = app.tray_by_id("main-tray") {
         if let Ok(menu) = build_tray_menu(app) {
@@ -331,11 +341,11 @@ fn main() {
     audio_core::logging::init_logging("audio-ui");
     audio_core::log_info!("Starting audio-ui");
     install_ctrl_c_daemon_shutdown();
-    ensure_daemon_running();
 
     tauri::Builder::default()
         .setup(|app| {
-            let menu = build_tray_menu(app.handle())?;
+            // Keep Tauri's STA setup hook non-blocking; spawn daemon & populate presets off-thread.
+            let menu = build_tray_menu_with_presets(app.handle(), None)?;
 
             TrayIconBuilder::with_id("main-tray")
                 .icon(build_tray_icon())
@@ -349,10 +359,12 @@ fn main() {
                         let _ = ipc_call(IpcRequest::Shutdown);
                         app.exit(0);
                     } else if let Some(preset_id) = id.strip_prefix("preset:") {
-                        let _ = ipc_call(IpcRequest::ApplyPreset {
-                            id: preset_id.to_string(),
+                        let preset_id = preset_id.to_string();
+                        let handle = app.clone();
+                        std::thread::spawn(move || {
+                            let _ = ipc_call(IpcRequest::ApplyPreset { id: preset_id });
+                            refresh_tray_menu(&handle);
                         });
-                        refresh_tray_menu(app);
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -366,6 +378,12 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                ensure_daemon_running();
+                refresh_tray_menu(&handle);
+            });
 
             show_main_window(app.handle());
             Ok(())
