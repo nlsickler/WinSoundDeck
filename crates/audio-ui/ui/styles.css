@@ -634,21 +634,21 @@ button:hover {
   color: #c7d2fe;
 }
 
-.settings-header {
+.visibility-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.settings-header h2 {
+.visibility-header h2 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
 }
 
-.settings-subtabs {
+.visibility-subtabs {
   display: flex;
   gap: 4px;
 }

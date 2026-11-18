@@ -127,7 +127,7 @@ function updateEndpointCard(card, ep) {
   card.querySelector(".vol-label").textContent = disconnected ? "--" : `${pctVal}%`;
 }
 
-export function renderIOTab(endpoints, includeDisconnected, onRefresh) {
+export function renderSystemTab(endpoints, includeDisconnected, onRefresh) {
   const visible = endpoints.filter(
     (e) => e.is_allowed && (includeDisconnected || e.is_connected)
   );

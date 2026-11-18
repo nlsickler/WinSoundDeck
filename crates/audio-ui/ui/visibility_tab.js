@@ -2,10 +2,10 @@ import { syncKeyedList } from "./dom.js";
 
 const { invoke } = window.__TAURI__.core;
 
-export function setupSettingsControls() {
+export function setupVisibilityControls() {
   const subtabBtns = document.querySelectorAll(".subtab-btn");
-  const outputsList = document.getElementById("settings-outputs-list");
-  const inputsList = document.getElementById("settings-inputs-list");
+  const outputsList = document.getElementById("visibility-outputs-list");
+  const inputsList = document.getElementById("visibility-inputs-list");
   for (const btn of subtabBtns) {
     btn.onclick = () => {
       const target = btn.dataset.subtab;
@@ -57,13 +57,13 @@ function updateAllowlistRow(row, ep) {
   row.querySelector(".badge-muted").textContent = ep.is_connected ? "Connected" : "Offline";
 }
 
-export function renderSettingsTab(endpoints, onRefresh) {
+export function renderVisibilityTab(endpoints, onRefresh) {
   const byName = (a, b) =>
     a.friendly_name.localeCompare(b.friendly_name, undefined, { sensitivity: "base" });
   const outputs = endpoints.filter((e) => e.flow === "Render").sort(byName);
   const inputs = endpoints.filter((e) => e.flow === "Capture").sort(byName);
   syncKeyedList(
-    document.getElementById("settings-outputs-list"),
+    document.getElementById("visibility-outputs-list"),
     outputs,
     (ep) => `set:Render:${ep.id}`,
     "No output devices found.",
@@ -71,7 +71,7 @@ export function renderSettingsTab(endpoints, onRefresh) {
     updateAllowlistRow
   );
   syncKeyedList(
-    document.getElementById("settings-inputs-list"),
+    document.getElementById("visibility-inputs-list"),
     inputs,
     (ep) => `set:Capture:${ep.id}`,
     "No input devices found.",
