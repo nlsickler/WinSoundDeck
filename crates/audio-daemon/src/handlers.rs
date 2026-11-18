@@ -1130,3 +1130,29 @@ fn apply_loopback_ratios(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn preset(id: &str, name: &str) -> Preset {
+        Preset {
+            id: id.to_string(),
+            name: name.to_string(),
+            endpoints: Vec::new(),
+            app_routes: Vec::new(),
+            app_loopbacks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn unique_preset_id_slugifies_and_handles_collisions() {
+        let existing = vec![
+            preset("gaming-mode", "Gaming Mode"),
+            preset("gaming-mode-2", "Gaming Mode!"),
+        ];
+        assert_eq!(unique_preset_id(&existing, "Gaming Mode"), "gaming-mode");
+        assert_eq!(unique_preset_id(&existing, "Gaming  Mode"), "gaming-mode-3");
+        assert_eq!(unique_preset_id(&existing, "   "), "preset");
+    }
+}

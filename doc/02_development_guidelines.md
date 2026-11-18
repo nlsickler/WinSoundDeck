@@ -7,7 +7,7 @@ This document defines the coding standards and architectural rules for the **Aud
 ## 1. Crate & Module Organization
 * **Domain-Based Modules:** Group tightly coupled abstractions and helpers into focused modules (e.g., `com.rs`, `enumerator.rs`, `endpoint.rs`, `session.rs`, `policy.rs`, `events.rs`). Avoid both monolithic `lib.rs` files and rigid one-struct-per-file boilerplate.
 * **Crate Root Re-exports:** `lib.rs` declares internal modules and exposes a flat, ergonomic public API via `pub use`.
-* **Thin Experiment Harness:** `crates/steel-thread` acts strictly as a CLI test runner. Reusable WASAPI/COM logic lives in `crates/audio-core`.
+* **Core Separation:** Reusable WASAPI/COM logic lives in `crates/audio-core`; `crates/audio-daemon` handles background routing/state and `crates/audio-ui` handles presentation.
 
 ## 2. Narrow `unsafe` Guards & Safety Invariants
 * **Minimal Scope:** Every `windows-rs` COM/Win32 FFI call is `unsafe`, so wrap **only** the FFI call(s) themselves in `unsafe { ... }`. Keep `Vec` allocations, string/path manipulation, control flow, and safe `windows-rs` wrappers (e.g., `.cast()`, `PROPVARIANT::to_string()`) outside `unsafe`.

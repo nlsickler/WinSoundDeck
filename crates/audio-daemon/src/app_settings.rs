@@ -251,3 +251,118 @@ impl AppSettingsStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_settings_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("audio_mixer_test_{name}_{nanos}"))
+            .join("app_settings.json")
+    }
+
+    #[test]
+    fn save_persists_only_pinned_apps_and_preserves_visibility_flags() {
+        let path = temp_settings_path("pinned_only");
+        let mut store = AppSettingsStore::default();
+        store.include_disconnected = true;
+        store.allowed_endpoints = Some(["ep-1".to_string()].into_iter().collect());
+
+        store.apps.insert(
+            "c:\\pinned.exe".to_string(),
+            AppPersistentSettings {
+                pinned: true,
+                display_name: Some("Pinned".to_string()),
+                volume: Some(0.8),
+                ..Default::default()
+            },
+        );
+        store.apps.insert(
+            "c:\\ephemeral.exe".to_string(),
+            AppPersistentSettings {
+                pinned: false,
+                display_name: Some("Ephemeral".to_string()),
+                volume: Some(0.3),
+                ..Default::default()
+            },
+        );
+
+        store.save(&path);
+        let reloaded = AppSettingsStore::load(&path);
+        assert!(reloaded.include_disconnected);
+        assert!(reloaded
+            .allowed_endpoints
+            .as_ref()
+            .is_some_and(|s| s.contains("ep-1")));
+        assert!(reloaded.apps.contains_key("c:\\pinned.exe"));
+        assert!(!reloaded.apps.contains_key("c:\\ephemeral.exe"));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn clear_unpinned_and_offline_upsert_work_by_app_key() {
+        let path = temp_settings_path("clear_unpinned");
+        let mut store = AppSettingsStore::default();
+
+        store.upsert_by_key_or_pid(0, Some("c:\\offline.exe"), &path, |s| {
+            s.volume = Some(0.5);
+        });
+        store.set_app_pinned(0, Some("c:\\pinned.exe"), true, &path);
+
+        assert_eq!(store.apps.len(), 2);
+        store.clear_unpinned();
+        assert_eq!(store.apps.len(), 1);
+        assert!(store.apps.contains_key("c:\\pinned.exe"));
+        assert!(!store.apps.contains_key("c:\\offline.exe"));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn remember_seen_sessions_ignores_pid_zero_and_populates_metadata() {
+        let path = temp_settings_path("remember");
+        let mut store = AppSettingsStore::default();
+        let sessions = vec![
+            SessionStatus {
+                endpoint_id: "ep1".to_string(),
+                pid: 0,
+                app_key: "".to_string(),
+                exe_name: "System Sounds".to_string(),
+                root_exe_name: "System Sounds".to_string(),
+                display_name: "System Sounds".to_string(),
+                is_active: false,
+                is_pinned: false,
+                volume: 1.0,
+                muted: false,
+                saved_volumes: HashMap::new(),
+            },
+            SessionStatus {
+                endpoint_id: "ep1".to_string(),
+                pid: 1234,
+                app_key: "c:\\vivaldi.exe".to_string(),
+                exe_name: "vivaldi.exe".to_string(),
+                root_exe_name: "vivaldi.exe".to_string(),
+                display_name: "Vivaldi".to_string(),
+                is_active: true,
+                is_pinned: false,
+                volume: 0.65,
+                muted: false,
+                saved_volumes: HashMap::new(),
+            },
+        ];
+
+        store.remember_seen_sessions(&sessions, &path);
+        assert_eq!(store.apps.len(), 1);
+        let cfg = &store.apps["c:\\vivaldi.exe"];
+        assert_eq!(cfg.display_name.as_deref(), Some("Vivaldi"));
+        assert_eq!(cfg.primary_endpoint_id.as_deref(), Some("ep1"));
+        assert_eq!(cfg.volume, Some(0.65));
+    }
+}

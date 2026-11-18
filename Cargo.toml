@@ -4,5 +4,4 @@ members = [
     "crates/audio-core",
     "crates/audio-daemon",
     "crates/audio-ui",
-    "crates/steel-thread",
 ]

@@ -326,3 +326,64 @@ where
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipc_request_round_trips_with_optional_app_key() {
+        let legacy_json = r#"{"type":"set_app_output_volume","pid":42,"endpoint_id":"ep1","volume":0.75,"finalize":true}"#;
+        let parsed: IpcRequest = serde_json::from_str(legacy_json).expect("deserialize legacy");
+        match parsed {
+            IpcRequest::SetAppOutputVolume {
+                pid,
+                app_key,
+                endpoint_id,
+                volume,
+                finalize,
+            } => {
+                assert_eq!(pid, 42);
+                assert_eq!(app_key, None);
+                assert_eq!(endpoint_id, "ep1");
+                assert!((volume - 0.75).abs() < f32::EPSILON);
+                assert!(finalize);
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
+
+        let pinned_req = IpcRequest::SetAppPinned {
+            pid: 0,
+            app_key: Some("c:\\app.exe".to_string()),
+            pinned: true,
+        };
+        let encoded = serde_json::to_string(&pinned_req).expect("serialize");
+        let decoded: IpcRequest = serde_json::from_str(&encoded).expect("deserialize");
+        assert!(matches!(
+            decoded,
+            IpcRequest::SetAppPinned {
+                pid: 0,
+                app_key: Some(_),
+                pinned: true
+            }
+        ));
+    }
+
+    #[test]
+    fn peak_levels_response_round_trips() {
+        let mut peaks = PeakLevels::default();
+        peaks.endpoints.insert("ep-render".to_string(), 0.42);
+        peaks.sessions.insert("8484".to_string(), 0.28);
+
+        let resp = IpcResponse::Peaks(peaks);
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let decoded: IpcResponse = serde_json::from_str(&json).expect("deserialize");
+        match decoded {
+            IpcResponse::Peaks(p) => {
+                assert!((p.endpoints["ep-render"] - 0.42).abs() < 1e-6);
+                assert!((p.sessions["8484"] - 0.28).abs() < 1e-6);
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+}
