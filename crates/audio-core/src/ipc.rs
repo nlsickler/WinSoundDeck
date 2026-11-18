@@ -190,7 +190,7 @@ pub struct PresetSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PeakLevels {
     pub endpoints: HashMap<String, f32>,
-    pub sessions: HashMap<u32, f32>,
+    pub sessions: HashMap<String, f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

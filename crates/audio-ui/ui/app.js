@@ -73,8 +73,8 @@ async function pollPeaks() {
       const v = pid && peaks.sessions ? peaks.sessions[pid] ?? 0 : 0;
       el.style.width = `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
     }
-  } catch {
-    // Ignore transient meter poll errors when daemon is offline.
+  } catch (err) {
+    console.error("get_peaks error:", err);
   } finally {
     peaksInFlight = false;
   }

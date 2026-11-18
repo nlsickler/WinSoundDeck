@@ -30,7 +30,7 @@ fn collect_peaks(enumerator: &AudioEnumerator) -> PeakLevels {
                             if let Ok(p) = s.peak_value() {
                                 peaks
                                     .sessions
-                                    .entry(s.pid)
+                                    .entry(s.pid.to_string())
                                     .and_modify(|cur| {
                                         if p > *cur {
                                             *cur = p;
