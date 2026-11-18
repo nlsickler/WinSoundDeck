@@ -3,8 +3,6 @@
 Remaining enhancements after the 10-step Steel Thread validation and initial UI/routing polish pass.
 
 ## UI & UX Design (`crates/audio-ui`)
-- **Device Aliases & Pinning:**
-  - Support pinning favorite devices to the top and custom display aliases for long Windows endpoint names.
 - **App Session Polish:**
   - Group/collapse multiple WASAPI sessions from the same `root_exe_name` when an app spawns multiple audio PIDs, with an option to expand individual PIDs.
 - **System Tray Polish:**
