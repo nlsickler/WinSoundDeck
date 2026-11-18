@@ -268,6 +268,8 @@ function buildRoutingOutputRow(onRefresh) {
     const v = Number(e.target.value) / 100;
     rememberedOutputVolumes.set(`${appIdFor(session)}:${endpoint.id}`, v);
     label.textContent = `${e.target.value}%`;
+    const rowMeterFill = row.querySelector(".slider-peak-fill");
+    if (rowMeterFill) rowMeterFill.dataset.peakScale = String(v);
     await invoke("set_app_output_volume", {
       pid: session.pid,
       appKey: session.app_key || null,
@@ -403,6 +405,9 @@ function renderAppsList(
             0.5;
           const vol = isPrimary ? s.volume : isLoopback ? lb.volume : savedVol;
           rememberedOutputVolumes.set(`${appId}:${ep.id}`, vol);
+          if (rowMeterFill) {
+            rowMeterFill.dataset.peakScale = s.muted || !enabled ? "0" : String(vol);
+          }
           const pctVal = pct(vol);
           if (!isSliderDragging() && Number(slider.value) !== pctVal) {
             slider.value = String(pctVal);

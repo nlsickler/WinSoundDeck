@@ -96,7 +96,8 @@ function updateEndpointCard(card, ep) {
   const meterFill = card.querySelector(".slider-peak-fill");
   if (meterFill) {
     meterFill.dataset.peakEndpoint = disconnected ? "" : ep.id;
-    if (disconnected) meterFill.style.width = "0%";
+    meterFill.dataset.peakScale = disconnected || ep.muted ? "0" : String(ep.volume);
+    if (disconnected || ep.muted) meterFill.style.width = "0%";
   }
   card.querySelector(".card-title").textContent = disconnected
     ? `${ep.friendly_name} (Offline)`

@@ -71,12 +71,14 @@ async function pollPeaks() {
     for (const el of document.querySelectorAll("[data-peak-endpoint]")) {
       const id = el.dataset.peakEndpoint;
       const v = id && peaks.endpoints ? peaks.endpoints[id] ?? 0 : 0;
-      el.style.width = `${scalePeak(v)}%`;
+      const scale = Number(el.dataset.peakScale ?? 1);
+      el.style.width = `${Math.round(scalePeak(v) * scale)}%`;
     }
     for (const el of document.querySelectorAll("[data-peak-pid]")) {
       const pid = el.dataset.peakPid;
       const v = pid && peaks.sessions ? peaks.sessions[pid] ?? 0 : 0;
-      el.style.width = `${scalePeak(v)}%`;
+      const scale = Number(el.dataset.peakScale ?? 1);
+      el.style.width = `${Math.round(scalePeak(v) * scale)}%`;
     }
   } catch (err) {
     console.error("get_peaks error:", err);
