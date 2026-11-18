@@ -5,6 +5,8 @@ import { renderPresets, setupPresetsBar } from "./presets_bar.js";
 
 const { invoke } = window.__TAURI__.core;
 
+let includeDisconnected = false;
+
 async function refreshAll(force = false) {
   if (!force && isUserInteracting()) return;
   const badge = document.getElementById("daemon-badge");
@@ -15,6 +17,10 @@ async function refreshAll(force = false) {
     ]);
     badge.textContent = "Daemon Connected";
     badge.className = "badge badge-ok";
+
+    includeDisconnected = Boolean(status.include_disconnected);
+    const discBtn = document.getElementById("disconnected-btn");
+    discBtn.classList.toggle("active", includeDisconnected);
 
     const appSessions = status.sessions.filter((s) => s.pid !== 0);
 
@@ -34,6 +40,10 @@ async function refreshAll(force = false) {
 setupTabs();
 setupAppsTabControls();
 setupPresetsBar(refreshAll);
+document.getElementById("disconnected-btn").onclick = async () => {
+  await invoke("set_include_disconnected", { include: !includeDisconnected });
+  await refreshAll(true);
+};
 document.getElementById("refresh-btn").onclick = () => refreshAll(true);
 refreshAll(true);
 setInterval(() => refreshAll(false), 2000);

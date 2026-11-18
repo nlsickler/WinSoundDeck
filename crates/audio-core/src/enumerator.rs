@@ -3,8 +3,8 @@ use std::sync::mpsc::Sender;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
-    eCapture, eRender, EDataFlow, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
-    DEVICE_STATE_ACTIVE,
+    eCapture, eRender, EDataFlow, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE,
+    DEVICE_STATE_ACTIVE, DEVICE_STATE_NOTPRESENT, DEVICE_STATE_UNPLUGGED,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
@@ -40,19 +40,34 @@ impl AudioEnumerator {
 
     /// Lists all active endpoints for the given data flow.
     pub fn list_active_endpoints(&self, flow: DataFlow) -> Result<Vec<AudioEndpoint>> {
-        let collection = unsafe {
-            self.inner
-                .EnumAudioEndpoints(flow.into(), DEVICE_STATE_ACTIVE)?
+        self.list_endpoints(flow, false)
+    }
+
+    /// Lists endpoints for `flow`, optionally including unplugged/disconnected devices.
+    pub fn list_endpoints(
+        &self,
+        flow: DataFlow,
+        include_disconnected: bool,
+    ) -> Result<Vec<AudioEndpoint>> {
+        let mask = if include_disconnected {
+            DEVICE_STATE(
+                DEVICE_STATE_ACTIVE.0 | DEVICE_STATE_UNPLUGGED.0 | DEVICE_STATE_NOTPRESENT.0,
+            )
+        } else {
+            DEVICE_STATE_ACTIVE
         };
+        let collection = unsafe { self.inner.EnumAudioEndpoints(flow.into(), mask)? };
         let count = unsafe { collection.GetCount()? };
         let mut endpoints = Vec::with_capacity(count as usize);
 
         for i in 0..count {
             let device = unsafe { collection.Item(i)? };
+            let state = unsafe { device.GetState().unwrap_or(DEVICE_STATE_ACTIVE) };
+            let is_connected = state == DEVICE_STATE_ACTIVE;
             let id = read_device_id(&device).unwrap_or_else(|_| "<unknown>".to_string());
             let friendly_name =
                 read_device_friendly_name(&device).unwrap_or_else(|_| "<unknown>".to_string());
-            endpoints.push(AudioEndpoint::new(id, friendly_name, flow, device));
+            endpoints.push(AudioEndpoint::new(id, friendly_name, flow, is_connected, device));
         }
         Ok(endpoints)
     }

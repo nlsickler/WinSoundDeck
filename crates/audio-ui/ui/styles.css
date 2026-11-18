@@ -45,6 +45,12 @@ body {
   gap: 10px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .title-group h1 {
   font-size: 15px;
   font-weight: 600;

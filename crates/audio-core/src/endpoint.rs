@@ -23,15 +23,23 @@ pub struct AudioEndpoint {
     pub id: String,
     pub friendly_name: String,
     pub flow: DataFlow,
+    pub is_connected: bool,
     device: IMMDevice,
 }
 
 impl AudioEndpoint {
-    pub(crate) fn new(id: String, friendly_name: String, flow: DataFlow, device: IMMDevice) -> Self {
+    pub(crate) fn new(
+        id: String,
+        friendly_name: String,
+        flow: DataFlow,
+        is_connected: bool,
+        device: IMMDevice,
+    ) -> Self {
         Self {
             id,
             friendly_name,
             flow,
+            is_connected,
             device,
         }
     }

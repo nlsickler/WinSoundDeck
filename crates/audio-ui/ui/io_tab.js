@@ -97,14 +97,19 @@ function buildEndpointCard(onRefresh) {
 
 function updateEndpointCard(card, ep) {
   card._item = ep;
-  card.querySelector(".card-title").textContent = ep.friendly_name;
+  const disconnected = ep.is_connected === false;
+  card.classList.toggle("inactive-card", disconnected);
+  card.querySelector(".card-title").textContent = disconnected
+    ? `${ep.friendly_name} (Offline)`
+    : ep.friendly_name;
 
-  card
-    .querySelector(".btn-role-default")
-    .classList.toggle("active", Boolean(ep.is_default_multimedia));
-  card
-    .querySelector(".btn-role-comms")
-    .classList.toggle("active", Boolean(ep.is_default_communications));
+  const defaultBtn = card.querySelector(".btn-role-default");
+  defaultBtn.classList.toggle("active", Boolean(ep.is_default_multimedia));
+  defaultBtn.disabled = disconnected;
+
+  const commsBtn = card.querySelector(".btn-role-comms");
+  commsBtn.classList.toggle("active", Boolean(ep.is_default_communications));
+  commsBtn.disabled = disconnected;
 
   const eyeBtn = card.querySelector(".btn-icon-eye");
   eyeBtn.style.display = ep.flow === "Render" ? "" : "none";
@@ -114,13 +119,15 @@ function updateEndpointCard(card, ep) {
   const muteBtn = card.querySelector(".btn-mute");
   muteBtn.classList.toggle("muted", ep.muted);
   muteBtn.textContent = ep.muted ? "Muted" : "Mute";
+  muteBtn.disabled = disconnected;
 
   const pctVal = pct(ep.volume);
   const slider = card.querySelector('input[type="range"]');
+  slider.disabled = disconnected;
   if (!isSliderDragging() && Number(slider.value) !== pctVal) {
     slider.value = String(pctVal);
   }
-  card.querySelector(".vol-label").textContent = `${pctVal}%`;
+  card.querySelector(".vol-label").textContent = disconnected ? "--" : `${pctVal}%`;
 }
 
 export function renderIOTab(endpoints, onRefresh) {

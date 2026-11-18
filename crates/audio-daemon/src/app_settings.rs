@@ -36,6 +36,8 @@ pub struct AppSettingsStore {
     pub apps: HashMap<String, AppPersistentSettings>,
     #[serde(default)]
     pub hidden_endpoints: HashSet<String>,
+    #[serde(default)]
+    pub include_disconnected: bool,
 }
 
 pub struct ActiveLoopback {

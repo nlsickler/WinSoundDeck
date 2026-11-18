@@ -235,6 +235,12 @@ fn set_default_endpoint(endpoint_id: String, role: DeviceRole) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+fn set_include_disconnected(include: bool) -> Result<(), String> {
+    ipc_call(IpcRequest::SetIncludeDisconnected { include })?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -377,6 +383,7 @@ fn main() {
             set_app_output_volume,
             set_endpoint_hidden,
             set_default_endpoint,
+            set_include_disconnected,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

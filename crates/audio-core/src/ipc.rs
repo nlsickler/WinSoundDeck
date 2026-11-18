@@ -97,6 +97,9 @@ pub enum IpcRequest {
         endpoint_id: String,
         role: DeviceRole,
     },
+    SetIncludeDisconnected {
+        include: bool,
+    },
     Shutdown,
 }
 
@@ -111,6 +114,12 @@ pub struct EndpointStatus {
     pub is_default_communications: bool,
     #[serde(default)]
     pub hidden: bool,
+    #[serde(default = "default_true")]
+    pub is_connected: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +153,8 @@ pub struct DaemonStatus {
     pub sessions: Vec<SessionStatus>,
     #[serde(default)]
     pub loopbacks: Vec<LoopbackStatus>,
+    #[serde(default)]
+    pub include_disconnected: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

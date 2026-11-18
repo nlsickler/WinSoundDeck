@@ -304,7 +304,8 @@ function renderAppsList(container, sessions, renderEndpoints, loopbacks, onRefre
           cb.checked = enabled;
 
           const nameEl = row.querySelector(".routing-output-name");
-          nameEl.textContent = ep.friendly_name;
+          const offline = ep.is_connected === false;
+          nameEl.textContent = offline ? `${ep.friendly_name} (Offline)` : ep.friendly_name;
           nameEl.title = ep.friendly_name;
 
           const primaryTag = row.querySelector(".primary-slot");

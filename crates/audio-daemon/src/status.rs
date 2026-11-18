@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use audio_core::ipc::{DaemonStatus, EndpointStatus, LoopbackStatus, SessionStatus};
 use audio_core::{
     resolve_app_display_name, resolve_root_exe_name, AudioEndpoint, AudioEnumerator, DataFlow,
-    DeviceRole,
+    DeviceRole, EndpointVolumeState,
 };
 
 use crate::app_settings::AppSettingsStore;
@@ -49,7 +49,14 @@ pub fn build_daemon_status(
     state: &DaemonState,
 ) -> audio_core::Result<DaemonStatus> {
     let active_id = state.config.active_preset_id.clone();
-    let mut status = collect_raw_status(enumerator, active_id, &state.default_endpoints)?;
+    let include_disconnected = state.app_settings.include_disconnected;
+    let mut status = collect_raw_status(
+        enumerator,
+        active_id,
+        &state.default_endpoints,
+        include_disconnected,
+    )?;
+    status.include_disconnected = include_disconnected;
 
     for ep in &mut status.endpoints {
         ep.hidden = state.app_settings.hidden_endpoints.contains(&ep.id);
@@ -74,6 +81,26 @@ pub fn build_daemon_status(
             continue;
         };
         s.saved_volumes = cfg.output_volumes.clone();
+        for sec in &cfg.secondary_outputs {
+            let ep_disconnected = status
+                .endpoints
+                .iter()
+                .find(|e| e.id == sec.endpoint_id)
+                .map(|e| !e.is_connected)
+                .unwrap_or(false);
+            if (!s.is_active || ep_disconnected)
+                && !merged_loopbacks
+                    .iter()
+                    .any(|lb| lb.pid == s.pid && lb.target_endpoint_id == sec.endpoint_id)
+            {
+                merged_loopbacks.push(LoopbackStatus {
+                    pid: s.pid,
+                    target_endpoint_id: sec.endpoint_id.clone(),
+                    volume: sec.volume,
+                    muted: sec.muted,
+                });
+            }
+        }
         if !s.is_active {
             if let Some(ref ep_id) = cfg.primary_endpoint_id {
                 s.endpoint_id = ep_id.clone();
@@ -86,19 +113,6 @@ pub fn build_daemon_status(
             if let Some(m) = cfg.muted {
                 s.muted = m;
             }
-            for sec in &cfg.secondary_outputs {
-                if !merged_loopbacks
-                    .iter()
-                    .any(|lb| lb.pid == s.pid && lb.target_endpoint_id == sec.endpoint_id)
-                {
-                    merged_loopbacks.push(LoopbackStatus {
-                        pid: s.pid,
-                        target_endpoint_id: sec.endpoint_id.clone(),
-                        volume: sec.volume,
-                        muted: sec.muted,
-                    });
-                }
-            }
         }
     }
 
@@ -110,6 +124,7 @@ fn collect_raw_status(
     enumerator: &AudioEnumerator,
     active_preset_id: Option<String>,
     default_endpoints: &HashMap<(DataFlow, DeviceRole), String>,
+    include_disconnected: bool,
 ) -> audio_core::Result<DaemonStatus> {
     let def_render_mm = default_endpoints
         .get(&(DataFlow::Render, DeviceRole::Multimedia))
@@ -153,8 +168,13 @@ fn collect_raw_status(
     let mut session_order: Vec<u32> = Vec::new();
 
     for flow in [DataFlow::Render, DataFlow::Capture] {
-        for ep in enumerator.list_active_endpoints(flow)? {
-            let vol_state = ep.master_volume()?;
+        for ep in enumerator.list_endpoints(flow, include_disconnected)? {
+            let vol_state = ep
+                .master_volume()
+                .unwrap_or(EndpointVolumeState {
+                    volume: 1.0,
+                    muted: false,
+                });
             let (mm_id, comm_id) = match flow {
                 DataFlow::Render => (&def_render_mm, &def_render_comm),
                 DataFlow::Capture => (&def_cap_mm, &def_cap_comm),
@@ -168,9 +188,10 @@ fn collect_raw_status(
                 is_default_multimedia: ep.id == *mm_id,
                 is_default_communications: ep.id == *comm_id,
                 hidden: false,
+                is_connected: ep.is_connected,
             });
 
-            if flow != DataFlow::Render {
+            if flow != DataFlow::Render || !ep.is_connected {
                 continue;
             }
             let Ok(ep_sessions) = ep.sessions() else {
@@ -224,5 +245,6 @@ fn collect_raw_status(
         endpoints,
         sessions,
         loopbacks: Vec::new(),
+        include_disconnected,
     })
 }

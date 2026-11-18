@@ -331,6 +331,15 @@ pub fn handle_request(
             }
             ipc_ok(res)
         }
+        IpcRequest::SetIncludeDisconnected { include } => {
+            if let Ok(mut guard) = state.lock() {
+                guard.app_settings.include_disconnected = include;
+                let path = guard.app_settings_path.clone();
+                guard.app_settings.save(&path);
+            }
+            log_info!("SetIncludeDisconnected(include={include})");
+            (IpcResponse::Ok, false)
+        }
     }
 }
 
@@ -409,10 +418,14 @@ fn handle_start_loopback(
 ) -> (IpcResponse, bool) {
     let vol = volume.clamp(0.0, 1.0);
     let res = enumerator
-        .list_active_endpoints(DataFlow::Render)
+        .list_endpoints(DataFlow::Render, true)
         .map_err(|e| e.to_string())
         .and_then(|eps| {
-            if !is_pid_active(&eps, pid) {
+            let ep = eps
+                .iter()
+                .find(|e| e.id == target_endpoint_id)
+                .ok_or_else(|| format!("Endpoint '{target_endpoint_id}' not found"))?;
+            if !ep.is_connected || !is_pid_active(&eps, pid) {
                 return Ok(None);
             }
             let primary = find_primary_session(&eps, pid);
@@ -422,11 +435,7 @@ fn handle_start_loopback(
                 }
             }
             let primary_vol = primary.map(|(_, v)| v).unwrap_or(1.0);
-            let ep = eps
-                .into_iter()
-                .find(|e| e.id == target_endpoint_id)
-                .ok_or_else(|| format!("Endpoint '{target_endpoint_id}' not found"))?;
-            let handle = LoopbackTee::start(pid, &ep, vol).map_err(|e| e.to_string())?;
+            let handle = LoopbackTee::start(pid, ep, vol).map_err(|e| e.to_string())?;
             let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
             handle.set_linear_gain(ratio.powi(2));
             handle.set_mute(vol <= 0.0);
@@ -629,8 +638,19 @@ fn handle_set_app_output_volume(
         s.primary_endpoint_id = Some(cur_primary);
         s.volume = Some(primary_vol);
         s.muted = Some(primary_vol <= 0.0);
-        s.output_volumes.insert(ep_key, vol);
-        s.secondary_outputs = updated_secs;
+        s.output_volumes.insert(ep_key.clone(), vol);
+        let mut merged = updated_secs;
+        for sec in &s.secondary_outputs {
+            if !merged.iter().any(|m| m.endpoint_id == sec.endpoint_id) {
+                let mut kept = sec.clone();
+                if kept.endpoint_id == ep_key {
+                    kept.volume = vol;
+                    kept.muted = vol <= 0.0;
+                }
+                merged.push(kept);
+            }
+        }
+        s.secondary_outputs = merged;
     });
 
     Ok(())
@@ -886,14 +906,33 @@ fn handle_save_current_as_preset(
 
     let mut guard = state.lock().expect("state lock");
     let mut app_loopbacks = Vec::new();
+    let mut seen_lb_keys = std::collections::HashSet::new();
     for ((pid, target_ep_id), lb) in &guard.loopbacks {
         if let Some(root) = resolve_root_exe_name(*pid) {
+            seen_lb_keys.insert((root.to_ascii_lowercase(), target_ep_id.clone()));
             app_loopbacks.push(AppLoopbackRule {
                 executable_name: root,
                 target_endpoint_id: target_ep_id.clone(),
                 volume: lb.volume,
                 muted: lb.muted,
             });
+        }
+    }
+    for (exe_path, app_cfg) in &guard.app_settings.apps {
+        let exe_name = std::path::Path::new(exe_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(exe_path)
+            .to_string();
+        for sec in &app_cfg.secondary_outputs {
+            if seen_lb_keys.insert((exe_name.to_ascii_lowercase(), sec.endpoint_id.clone())) {
+                app_loopbacks.push(AppLoopbackRule {
+                    executable_name: exe_name.clone(),
+                    target_endpoint_id: sec.endpoint_id.clone(),
+                    volume: sec.volume,
+                    muted: sec.muted,
+                });
+            }
         }
     }
 
