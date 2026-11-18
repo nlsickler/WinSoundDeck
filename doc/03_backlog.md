@@ -3,8 +3,6 @@
 Remaining enhancements after the 10-step Steel Thread validation and initial UI/routing polish pass.
 
 ## UI & UX Design (`crates/audio-ui`)
-- **Live Peak Meters:**
-  - Surface per-endpoint and per-session peak levels (`IAudioMeterInformation` in `audio-core`) so active audio sources are immediately visible.
 - **Device Aliases & Pinning:**
   - Support pinning favorite devices to the top and custom display aliases for long Windows endpoint names.
 - **App Session Polish:**
