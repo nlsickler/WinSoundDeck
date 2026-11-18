@@ -423,29 +423,26 @@ button:hover {
 }
 
 .slider-meter-wrap {
-  position: relative;
   flex: 1;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
 
 .slider-meter-wrap input[type="range"] {
-  position: relative;
-  z-index: 1;
+  order: 1;
   width: 100%;
+  margin: 0;
 }
 
 .slider-peak-fill {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 8px;
+  order: 2;
+  height: 3px;
   width: 0%;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.35);
+  background: rgba(56, 189, 248, 0.75);
   pointer-events: none;
-  z-index: 0;
   transition: width 65ms linear;
 }
 
