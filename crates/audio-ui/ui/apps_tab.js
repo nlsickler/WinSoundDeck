@@ -72,16 +72,10 @@ function buildAppCard(onRefresh) {
 
   header.append(titleToggle, pinBtn, muteBtn, meta);
 
-  const meter = document.createElement("div");
-  meter.className = "peak-meter peak-meter-app";
-  const meterFill = document.createElement("div");
-  meterFill.className = "peak-meter-fill";
-  meter.append(meterFill);
-
   const body = document.createElement("div");
   body.className = "routing-outputs";
 
-  card.append(header, meter, body);
+  card.append(header, body);
 
   const toggleExpand = () => {
     const s = card._item;
@@ -149,15 +143,20 @@ function buildRoutingOutputRow(onRefresh) {
   primaryTag.textContent = "P";
   primaryTag.title = "Primary Output";
 
+  const sliderWrap = document.createElement("div");
+  sliderWrap.className = "slider-meter-wrap";
+  const meterFill = document.createElement("div");
+  meterFill.className = "slider-peak-fill";
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "0";
   slider.max = "100";
+  sliderWrap.append(meterFill, slider);
 
   const label = document.createElement("span");
   label.className = "vol-label";
 
-  row.append(cb, name, primaryTag, slider, label);
+  row.append(cb, name, primaryTag, sliderWrap, label);
 
   cb.onchange = async () => {
     const ctx = row._ctx;
@@ -316,11 +315,6 @@ function renderAppsList(
       card._item = s;
       card.classList.toggle("inactive-card", !s.is_active);
       card.classList.toggle("app-muted", Boolean(s.muted));
-      const meterFill = card.querySelector(".peak-meter-fill");
-      if (meterFill) {
-        meterFill.dataset.peakPid = s.is_active && s.pid > 0 ? String(s.pid) : "";
-        if (!s.is_active || s.pid <= 0) meterFill.style.width = "0%";
-      }
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;
@@ -396,6 +390,12 @@ function renderAppsList(
           const slider = row.querySelector('input[type="range"]');
           const label = row.querySelector(".vol-label");
           slider.disabled = !enabled;
+          const rowMeterFill = row.querySelector(".slider-peak-fill");
+          if (rowMeterFill) {
+            const activePid = s.is_active && enabled && s.pid > 0 ? String(s.pid) : "";
+            rowMeterFill.dataset.peakPid = activePid;
+            if (!activePid) rowMeterFill.style.width = "0%";
+          }
 
           const savedVol =
             (s.saved_volumes && s.saved_volumes[ep.id]) ??

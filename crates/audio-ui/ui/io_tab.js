@@ -47,21 +47,20 @@ function buildEndpointCard(onRefresh) {
   row.className = "controls-row";
   const muteBtn = document.createElement("button");
   muteBtn.className = "btn-mute";
+  const sliderWrap = document.createElement("div");
+  sliderWrap.className = "slider-meter-wrap";
+  const meterFill = document.createElement("div");
+  meterFill.className = "slider-peak-fill";
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "0";
   slider.max = "100";
+  sliderWrap.append(meterFill, slider);
   const label = document.createElement("span");
   label.className = "vol-label";
-  row.append(muteBtn, slider, label);
+  row.append(muteBtn, sliderWrap, label);
 
-  const meter = document.createElement("div");
-  meter.className = "peak-meter";
-  const meterFill = document.createElement("div");
-  meterFill.className = "peak-meter-fill";
-  meter.append(meterFill);
-
-  card.append(header, row, meter);
+  card.append(header, row);
 
   muteBtn.onclick = async () => {
     const ep = card._item;
@@ -94,7 +93,7 @@ function updateEndpointCard(card, ep) {
   card._item = ep;
   const disconnected = ep.is_connected === false;
   card.classList.toggle("inactive-card", disconnected);
-  const meterFill = card.querySelector(".peak-meter-fill");
+  const meterFill = card.querySelector(".slider-peak-fill");
   if (meterFill) {
     meterFill.dataset.peakEndpoint = disconnected ? "" : ep.id;
     if (disconnected) meterFill.style.width = "0%";

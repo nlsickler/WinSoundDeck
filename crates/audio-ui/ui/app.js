@@ -57,6 +57,11 @@ document.getElementById("disconnected-btn").onclick = async () => {
   await refreshAll(true);
 };
 document.getElementById("refresh-btn").onclick = () => refreshAll(true);
+function scalePeak(v) {
+  if (!v || v <= 0.001) return 0;
+  return Math.round(Math.pow(Math.max(0, Math.min(1, v)), 0.45) * 100);
+}
+
 let peaksInFlight = false;
 async function pollPeaks() {
   if (document.hidden || peaksInFlight) return;
@@ -66,12 +71,12 @@ async function pollPeaks() {
     for (const el of document.querySelectorAll("[data-peak-endpoint]")) {
       const id = el.dataset.peakEndpoint;
       const v = id && peaks.endpoints ? peaks.endpoints[id] ?? 0 : 0;
-      el.style.width = `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+      el.style.width = `${scalePeak(v)}%`;
     }
     for (const el of document.querySelectorAll("[data-peak-pid]")) {
       const pid = el.dataset.peakPid;
       const v = pid && peaks.sessions ? peaks.sessions[pid] ?? 0 : 0;
-      el.style.width = `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+      el.style.width = `${scalePeak(v)}%`;
     }
   } catch (err) {
     console.error("get_peaks error:", err);
