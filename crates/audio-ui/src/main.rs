@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use audio_core::ipc::{
     install_ctrl_c_daemon_shutdown, send_ipc_request, DaemonStatus, IpcRequest, IpcResponse,
-    PresetSummary, DEFAULT_PIPE_NAME,
+    PeakLevels, PresetSummary, DEFAULT_PIPE_NAME,
 };
 use audio_core::{DataFlow, DeviceRole};
 use serde::Serialize;
@@ -64,6 +64,14 @@ fn get_status() -> Result<DaemonStatus, String> {
     match ipc_call(IpcRequest::GetStatus)? {
         IpcResponse::Status(status) => Ok(status),
         _ => Err("Unexpected response to GetStatus".to_string()),
+    }
+}
+
+#[tauri::command]
+fn get_peaks() -> Result<PeakLevels, String> {
+    match ipc_call(IpcRequest::GetPeaks)? {
+        IpcResponse::Peaks(p) => Ok(p),
+        other => Err(format!("Unexpected response: {other:?}")),
     }
 }
 
@@ -406,6 +414,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_peaks,
             list_presets,
             apply_preset,
             save_current_as_preset,

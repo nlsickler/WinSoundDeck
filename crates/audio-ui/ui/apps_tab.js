@@ -72,10 +72,16 @@ function buildAppCard(onRefresh) {
 
   header.append(titleToggle, pinBtn, muteBtn, meta);
 
+  const meter = document.createElement("div");
+  meter.className = "peak-meter peak-meter-app";
+  const meterFill = document.createElement("div");
+  meterFill.className = "peak-meter-fill";
+  meter.append(meterFill);
+
   const body = document.createElement("div");
   body.className = "routing-outputs";
 
-  card.append(header, body);
+  card.append(header, meter, body);
 
   const toggleExpand = () => {
     const s = card._item;
@@ -310,6 +316,11 @@ function renderAppsList(
       card._item = s;
       card.classList.toggle("inactive-card", !s.is_active);
       card.classList.toggle("app-muted", Boolean(s.muted));
+      const meterFill = card.querySelector(".peak-meter-fill");
+      if (meterFill) {
+        meterFill.dataset.peakPid = s.is_active && s.pid > 0 ? String(s.pid) : "";
+        if (!s.is_active || s.pid <= 0) meterFill.style.width = "0%";
+      }
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;

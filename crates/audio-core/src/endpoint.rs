@@ -1,7 +1,7 @@
 use std::sync::mpsc::Sender;
 
 use windows::core::{Interface, GUID};
-use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::{
     AudioSessionStateActive, AudioSessionStateExpired, IAudioSessionControl2, IAudioSessionManager2,
     IMMDevice, ISimpleAudioVolume,
@@ -63,9 +63,16 @@ impl AudioEndpoint {
     }
 
     /// Sets the endpoint's master mute flag.
+    /// Sets the endpoint's master mute flag.
     pub fn set_master_mute(&self, muted: bool) -> Result<()> {
         let ep_vol = self.endpoint_volume()?;
         unsafe { ep_vol.SetMute(muted, &GUID::zeroed()) }
+    }
+
+    /// Reads the endpoint's current peak audio level (`0.0..=1.0`).
+    pub fn peak_value(&self) -> Result<f32> {
+        let meter: IAudioMeterInformation = unsafe { self.device.Activate(CLSCTX_ALL, None)? };
+        Ok(unsafe { meter.GetPeakValue()? }.clamp(0.0, 1.0))
     }
 
     /// Enumerates all active audio sessions on this endpoint.

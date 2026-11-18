@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use audio_core::ipc::{IpcRequest, IpcResponse, PresetSummary};
+use audio_core::ipc::{IpcRequest, IpcResponse, PeakLevels, PresetSummary};
 use audio_core::{
     log_debug, log_error, log_info, log_warn, resolve_root_exe_name, AppLoopbackRule,
     AppPolicyClient, AppRouteRule, AppVolumeRule, AudioEnumerator, DataFlow, DeviceRole,
@@ -12,6 +12,40 @@ use audio_core::{
 use crate::app_settings::{ActiveLoopback, SecondaryOutputSetting};
 use crate::state::DaemonState;
 use crate::status::{build_daemon_status, find_primary_session, is_pid_active};
+
+fn collect_peaks(enumerator: &AudioEnumerator) -> PeakLevels {
+    let mut peaks = PeakLevels::default();
+    for flow in [DataFlow::Render, DataFlow::Capture] {
+        let Ok(eps) = enumerator.list_active_endpoints(flow) else {
+            continue;
+        };
+        for ep in eps {
+            if let Ok(p) = ep.peak_value() {
+                peaks.endpoints.insert(ep.id.clone(), p);
+            }
+            if flow == DataFlow::Render {
+                if let Ok(sessions) = ep.sessions() {
+                    for s in sessions {
+                        if s.is_active && s.pid > 0 {
+                            if let Ok(p) = s.peak_value() {
+                                peaks
+                                    .sessions
+                                    .entry(s.pid)
+                                    .and_modify(|cur| {
+                                        if p > *cur {
+                                            *cur = p;
+                                        }
+                                    })
+                                    .or_insert(p);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    peaks
+}
 
 fn ipc_ok<E: ToString>(res: Result<(), E>) -> (IpcResponse, bool) {
     match res {
@@ -56,6 +90,7 @@ pub fn handle_request(
                 ),
             }
         }
+        IpcRequest::GetPeaks => (IpcResponse::Peaks(collect_peaks(enumerator)), false),
         IpcRequest::ListPresets => {
             let guard = state.lock().expect("state lock");
             let presets = guard

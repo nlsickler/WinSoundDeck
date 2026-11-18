@@ -55,7 +55,13 @@ function buildEndpointCard(onRefresh) {
   label.className = "vol-label";
   row.append(muteBtn, slider, label);
 
-  card.append(header, row);
+  const meter = document.createElement("div");
+  meter.className = "peak-meter";
+  const meterFill = document.createElement("div");
+  meterFill.className = "peak-meter-fill";
+  meter.append(meterFill);
+
+  card.append(header, row, meter);
 
   muteBtn.onclick = async () => {
     const ep = card._item;
@@ -88,6 +94,11 @@ function updateEndpointCard(card, ep) {
   card._item = ep;
   const disconnected = ep.is_connected === false;
   card.classList.toggle("inactive-card", disconnected);
+  const meterFill = card.querySelector(".peak-meter-fill");
+  if (meterFill) {
+    meterFill.dataset.peakEndpoint = disconnected ? "" : ep.id;
+    if (disconnected) meterFill.style.width = "0%";
+  }
   card.querySelector(".card-title").textContent = disconnected
     ? `${ep.friendly_name} (Offline)`
     : ep.friendly_name;

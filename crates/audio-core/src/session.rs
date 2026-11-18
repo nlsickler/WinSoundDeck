@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use windows::core::{GUID, HSTRING, PWSTR};
+use windows::core::{Interface, GUID, HSTRING, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
+use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use windows::Win32::Media::Audio::ISimpleAudioVolume;
 use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
@@ -56,6 +57,12 @@ impl AudioSession {
 
     pub fn set_mute(&self, muted: bool) -> Result<()> {
         unsafe { self.volume_ctl.SetMute(muted, &GUID::zeroed()) }
+    }
+
+    /// Reads the session's current peak audio level (`0.0..=1.0`).
+    pub fn peak_value(&self) -> Result<f32> {
+        let meter: IAudioMeterInformation = self.volume_ctl.cast()?;
+        Ok(unsafe { meter.GetPeakValue()? }.clamp(0.0, 1.0))
     }
 }
 

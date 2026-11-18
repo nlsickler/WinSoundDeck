@@ -24,6 +24,7 @@ pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\audio-mixer-daemon";
 pub enum IpcRequest {
     Ping,
     GetStatus,
+    GetPeaks,
     ListPresets,
     ApplyPreset {
         id: String,
@@ -186,11 +187,18 @@ pub struct PresetSummary {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PeakLevels {
+    pub endpoints: HashMap<String, f32>,
+    pub sessions: HashMap<u32, f32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IpcResponse {
     Pong,
     Status(DaemonStatus),
+    Peaks(PeakLevels),
     Presets {
         active_preset_id: Option<String>,
         presets: Vec<PresetSummary>,
