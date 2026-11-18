@@ -22,6 +22,24 @@ export function isUserInteracting() {
   );
 }
 
+export function createMeterSlider() {
+  const wrap = document.createElement("div");
+  wrap.className = "slider-meter-wrap";
+  const rail = document.createElement("div");
+  rail.className = "slider-rail";
+  const volFill = document.createElement("div");
+  volFill.className = "slider-vol-fill";
+  const meterFill = document.createElement("div");
+  meterFill.className = "slider-peak-fill";
+  rail.append(volFill, meterFill);
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "0";
+  slider.max = "100";
+  wrap.append(rail, slider);
+  return { wrap, slider, volFill, meterFill };
+}
+
 export function setupTabs() {
   const buttons = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".tab-panel");

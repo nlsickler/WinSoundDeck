@@ -1,4 +1,10 @@
-import { isSliderDragging, pct, setSliderDragging, syncKeyedList } from "./dom.js";
+import {
+  createMeterSlider,
+  isSliderDragging,
+  pct,
+  setSliderDragging,
+  syncKeyedList,
+} from "./dom.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -143,20 +149,7 @@ function buildRoutingOutputRow(onRefresh) {
   primaryTag.textContent = "P";
   primaryTag.title = "Primary Output";
 
-  const sliderWrap = document.createElement("div");
-  sliderWrap.className = "slider-meter-wrap";
-  const rail = document.createElement("div");
-  rail.className = "slider-rail";
-  const volFill = document.createElement("div");
-  volFill.className = "slider-vol-fill";
-  const meterFill = document.createElement("div");
-  meterFill.className = "slider-peak-fill";
-  rail.append(volFill, meterFill);
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = "0";
-  slider.max = "100";
-  sliderWrap.append(rail, slider);
+  const { wrap: sliderWrap, slider } = createMeterSlider();
 
   const label = document.createElement("span");
   label.className = "vol-label";

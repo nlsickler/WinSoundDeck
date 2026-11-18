@@ -46,11 +46,6 @@ pub enum IpcRequest {
         endpoint_id: String,
         muted: bool,
     },
-    SetSessionVolume {
-        endpoint_id: String,
-        pid: u32,
-        volume: f32,
-    },
     SetSessionMute {
         endpoint_id: String,
         pid: u32,
@@ -65,26 +60,12 @@ pub enum IpcRequest {
         flow: DataFlow,
         endpoint_id: String,
     },
-    ResetAppRoute {
-        pid: u32,
-        flow: DataFlow,
-    },
     StartLoopback {
         pid: u32,
         #[serde(default)]
         app_key: Option<String>,
         target_endpoint_id: String,
         volume: f32,
-    },
-    SetLoopbackVolume {
-        pid: u32,
-        target_endpoint_id: String,
-        volume: f32,
-    },
-    SetLoopbackMute {
-        pid: u32,
-        target_endpoint_id: String,
-        muted: bool,
     },
     StopLoopback {
         pid: u32,

@@ -194,47 +194,28 @@ pub fn build_daemon_status(
     Ok(status)
 }
 
+fn resolve_default(
+    enumerator: &AudioEnumerator,
+    default_endpoints: &HashMap<(DataFlow, DeviceRole), String>,
+    flow: DataFlow,
+    role: DeviceRole,
+) -> String {
+    default_endpoints
+        .get(&(flow, role))
+        .cloned()
+        .or_else(|| enumerator.default_endpoint_id(flow, role).ok())
+        .unwrap_or_default()
+}
+
 fn collect_raw_status(
     enumerator: &AudioEnumerator,
     active_preset_id: Option<String>,
     default_endpoints: &HashMap<(DataFlow, DeviceRole), String>,
 ) -> audio_core::Result<DaemonStatus> {
-    let def_render_mm = default_endpoints
-        .get(&(DataFlow::Render, DeviceRole::Multimedia))
-        .cloned()
-        .or_else(|| {
-            enumerator
-                .default_endpoint_id(DataFlow::Render, DeviceRole::Multimedia)
-                .ok()
-        })
-        .unwrap_or_default();
-    let def_render_comm = default_endpoints
-        .get(&(DataFlow::Render, DeviceRole::Communications))
-        .cloned()
-        .or_else(|| {
-            enumerator
-                .default_endpoint_id(DataFlow::Render, DeviceRole::Communications)
-                .ok()
-        })
-        .unwrap_or_default();
-    let def_cap_mm = default_endpoints
-        .get(&(DataFlow::Capture, DeviceRole::Multimedia))
-        .cloned()
-        .or_else(|| {
-            enumerator
-                .default_endpoint_id(DataFlow::Capture, DeviceRole::Multimedia)
-                .ok()
-        })
-        .unwrap_or_default();
-    let def_cap_comm = default_endpoints
-        .get(&(DataFlow::Capture, DeviceRole::Communications))
-        .cloned()
-        .or_else(|| {
-            enumerator
-                .default_endpoint_id(DataFlow::Capture, DeviceRole::Communications)
-                .ok()
-        })
-        .unwrap_or_default();
+    let def_render_mm = resolve_default(enumerator, default_endpoints, DataFlow::Render, DeviceRole::Multimedia);
+    let def_render_comm = resolve_default(enumerator, default_endpoints, DataFlow::Render, DeviceRole::Communications);
+    let def_cap_mm = resolve_default(enumerator, default_endpoints, DataFlow::Capture, DeviceRole::Multimedia);
+    let def_cap_comm = resolve_default(enumerator, default_endpoints, DataFlow::Capture, DeviceRole::Communications);
 
     let mut endpoints = Vec::new();
     let mut sessions_by_pid: HashMap<u32, (bool, SessionStatus)> = HashMap::new();

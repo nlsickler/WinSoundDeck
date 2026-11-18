@@ -138,16 +138,6 @@ fn set_endpoint_mute(flow: DataFlow, endpoint_id: String, muted: bool) -> Result
 }
 
 #[tauri::command]
-fn set_session_volume(endpoint_id: String, pid: u32, volume: f32) -> Result<(), String> {
-    ipc_call(IpcRequest::SetSessionVolume {
-        endpoint_id,
-        pid,
-        volume,
-    })?;
-    Ok(())
-}
-
-#[tauri::command]
 fn set_session_mute(
     endpoint_id: String,
     pid: u32,
@@ -180,12 +170,6 @@ fn route_app(
 }
 
 #[tauri::command]
-fn reset_app_route(pid: u32, flow: DataFlow) -> Result<(), String> {
-    ipc_call(IpcRequest::ResetAppRoute { pid, flow })?;
-    Ok(())
-}
-
-#[tauri::command]
 fn start_loopback(
     pid: u32,
     app_key: Option<String>,
@@ -197,26 +181,6 @@ fn start_loopback(
         app_key,
         target_endpoint_id,
         volume,
-    })?;
-    Ok(())
-}
-
-#[tauri::command]
-fn set_loopback_volume(pid: u32, target_endpoint_id: String, volume: f32) -> Result<(), String> {
-    ipc_call(IpcRequest::SetLoopbackVolume {
-        pid,
-        target_endpoint_id,
-        volume,
-    })?;
-    Ok(())
-}
-
-#[tauri::command]
-fn set_loopback_mute(pid: u32, target_endpoint_id: String, muted: bool) -> Result<(), String> {
-    ipc_call(IpcRequest::SetLoopbackMute {
-        pid,
-        target_endpoint_id,
-        muted,
     })?;
     Ok(())
 }
@@ -422,13 +386,9 @@ fn main() {
             clear_active_preset,
             set_endpoint_volume,
             set_endpoint_mute,
-            set_session_volume,
             set_session_mute,
             route_app,
-            reset_app_route,
             start_loopback,
-            set_loopback_volume,
-            set_loopback_mute,
             stop_loopback,
             set_app_output_volume,
             set_app_pinned,
