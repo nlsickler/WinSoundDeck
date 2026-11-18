@@ -49,13 +49,18 @@ function buildEndpointCard(onRefresh) {
   muteBtn.className = "btn-mute";
   const sliderWrap = document.createElement("div");
   sliderWrap.className = "slider-meter-wrap";
+  const rail = document.createElement("div");
+  rail.className = "slider-rail";
+  const volFill = document.createElement("div");
+  volFill.className = "slider-vol-fill";
   const meterFill = document.createElement("div");
   meterFill.className = "slider-peak-fill";
+  rail.append(volFill, meterFill);
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "0";
   slider.max = "100";
-  sliderWrap.append(meterFill, slider);
+  sliderWrap.append(rail, slider);
   const label = document.createElement("span");
   label.className = "vol-label";
   row.append(muteBtn, sliderWrap, label);
@@ -79,6 +84,8 @@ function buildEndpointCard(onRefresh) {
     const ep = card._item;
     const v = Number(e.target.value) / 100;
     label.textContent = `${e.target.value}%`;
+    volFill.style.width = `${e.target.value}%`;
+    meterFill.dataset.peakScale = ep.muted ? "0" : String(v);
     await invoke("set_endpoint_volume", {
       flow: ep.flow,
       endpointId: ep.id,
@@ -118,10 +125,12 @@ function updateEndpointCard(card, ep) {
 
   const pctVal = pct(ep.volume);
   const slider = card.querySelector('input[type="range"]');
+  const volFill = card.querySelector(".slider-vol-fill");
   slider.disabled = disconnected;
   if (!isSliderDragging() && Number(slider.value) !== pctVal) {
     slider.value = String(pctVal);
   }
+  if (volFill) volFill.style.width = disconnected ? "0%" : `${slider.value}%`;
   card.querySelector(".vol-label").textContent = disconnected ? "--" : `${pctVal}%`;
 }
 

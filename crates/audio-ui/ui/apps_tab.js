@@ -145,13 +145,18 @@ function buildRoutingOutputRow(onRefresh) {
 
   const sliderWrap = document.createElement("div");
   sliderWrap.className = "slider-meter-wrap";
+  const rail = document.createElement("div");
+  rail.className = "slider-rail";
+  const volFill = document.createElement("div");
+  volFill.className = "slider-vol-fill";
   const meterFill = document.createElement("div");
   meterFill.className = "slider-peak-fill";
+  rail.append(volFill, meterFill);
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "0";
   slider.max = "100";
-  sliderWrap.append(meterFill, slider);
+  sliderWrap.append(rail, slider);
 
   const label = document.createElement("span");
   label.className = "vol-label";
@@ -268,6 +273,8 @@ function buildRoutingOutputRow(onRefresh) {
     const v = Number(e.target.value) / 100;
     rememberedOutputVolumes.set(`${appIdFor(session)}:${endpoint.id}`, v);
     label.textContent = `${e.target.value}%`;
+    const rowVolFill = row.querySelector(".slider-vol-fill");
+    if (rowVolFill) rowVolFill.style.width = `${e.target.value}%`;
     const rowMeterFill = row.querySelector(".slider-peak-fill");
     if (rowMeterFill) rowMeterFill.dataset.peakScale = String(v);
     await invoke("set_app_output_volume", {
@@ -412,6 +419,8 @@ function renderAppsList(
           if (!isSliderDragging() && Number(slider.value) !== pctVal) {
             slider.value = String(pctVal);
           }
+          const rowVolFill = row.querySelector(".slider-vol-fill");
+          if (rowVolFill) rowVolFill.style.width = `${slider.value}%`;
           label.textContent = enabled ? `${pctVal}%` : "--";
         }
       );
