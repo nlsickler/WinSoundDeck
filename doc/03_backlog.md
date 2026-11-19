@@ -2,11 +2,6 @@
 
 Remaining enhancements after the 10-step Steel Thread validation and initial UI/routing polish pass.
 
-## UI & UX Design (`crates/audio-ui`)
-- **System Tray Polish:**
-  - Anchor the mixer window cleanly near the system tray (flyout style) or remember window position/size.
-  - Replace the programmatic 32x32 tray icon with a multi-resolution icon asset.
-
 ## Audio Engine & Routing
 - **Hot-Plug Debouncing & Edge Cases:**
   - Debounce rapid `DeviceStateChanged` / `DeviceAdded` bursts when USB/wireless headsets reconnect.
