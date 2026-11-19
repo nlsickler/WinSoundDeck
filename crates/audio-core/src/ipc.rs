@@ -119,6 +119,8 @@ pub struct EndpointStatus {
     #[serde(default = "default_true")]
     pub is_connected: bool,
     #[serde(default)]
+    pub is_bluetooth: bool,
+    #[serde(default)]
     pub last_seen: Option<u64>,
 }
 

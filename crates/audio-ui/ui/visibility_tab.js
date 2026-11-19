@@ -48,6 +48,10 @@ function buildVisibilityCard(onRefresh) {
   name.className = "card-title";
   titleToggle.append(chevron, name);
 
+  const btTag = document.createElement("span");
+  btTag.className = "badge-tag collapsed";
+  btTag.textContent = "Bluetooth";
+
   const statusTag = document.createElement("span");
   statusTag.className = "badge-muted";
 
@@ -55,7 +59,7 @@ function buildVisibilityCard(onRefresh) {
   eyeBtn.className = "btn-eye";
   eyeBtn.textContent = "👁️";
 
-  header.append(titleToggle, statusTag, eyeBtn);
+  header.append(titleToggle, btTag, statusTag, eyeBtn);
 
   const body = document.createElement("div");
   body.className = "visibility-details collapsed";
@@ -69,6 +73,11 @@ function buildVisibilityCard(onRefresh) {
   const forgetBtn = document.createElement("button");
   forgetBtn.className = "btn-secondary";
   forgetBtn.textContent = "Forget from Mixer";
+
+  const btSettingsBtn = document.createElement("button");
+  btSettingsBtn.className = "btn-secondary collapsed";
+  btSettingsBtn.textContent = "Open Bluetooth Settings";
+  btSettingsBtn.title = "Unpair this Bluetooth device in Windows Settings";
 
   const winRemoveBtn = document.createElement("button");
   winRemoveBtn.className = "btn-danger";
@@ -92,7 +101,7 @@ function buildVisibilityCard(onRefresh) {
   const errorNote = document.createElement("div");
   errorNote.className = "visibility-error collapsed";
 
-  actions.append(forgetBtn, winRemoveBtn, confirmBox);
+  actions.append(forgetBtn, btSettingsBtn, winRemoveBtn, confirmBox);
   body.append(idText, actions, errorNote);
   card.append(header, body);
 
@@ -129,6 +138,15 @@ function buildVisibilityCard(onRefresh) {
     expandedIds.delete(ep.id);
     await invoke("forget_endpoint", { endpointId: ep.id });
     await onRefresh(true);
+  };
+
+  btSettingsBtn.onclick = async () => {
+    try {
+      await invoke("open_bluetooth_settings");
+    } catch (err) {
+      errorNote.textContent = String(err);
+      errorNote.classList.remove("collapsed");
+    }
   };
 
   winRemoveBtn.onclick = () => {
@@ -177,6 +195,7 @@ function updateVisibilityCard(card, ep) {
   nameEl.textContent = ep.friendly_name;
   nameEl.title = ep.friendly_name;
 
+  card.querySelector(".badge-tag").classList.toggle("collapsed", !ep.is_bluetooth);
   card.querySelector(".badge-muted").textContent = formatLastSeen(ep);
 
   const eyeBtn = card.querySelector(".btn-eye");
@@ -191,8 +210,11 @@ function updateVisibilityCard(card, ep) {
   actions.classList.toggle("collapsed", ep.is_connected);
 
   const confirming = pendingWinRemoveId === ep.id;
-  card.querySelector(".btn-danger").classList.toggle("collapsed", confirming);
-  card.querySelector(".visibility-confirm").classList.toggle("collapsed", !confirming);
+  const isBt = Boolean(ep.is_bluetooth);
+  const btBtn = actions.querySelectorAll(".btn-secondary")[1];
+  if (btBtn) btBtn.classList.toggle("collapsed", !isBt);
+  card.querySelector(".btn-danger").classList.toggle("collapsed", isBt || confirming);
+  card.querySelector(".visibility-confirm").classList.toggle("collapsed", isBt || !confirming);
 }
 
 export function renderVisibilityTab(endpoints, onRefresh) {

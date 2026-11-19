@@ -1,7 +1,9 @@
 use std::sync::mpsc::Sender;
 
 use serde::{Deserialize, Serialize};
-use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+use windows::Win32::Devices::FunctionDiscovery::{
+    PKEY_Device_EnumeratorName, PKEY_Device_FriendlyName,
+};
 use windows::Win32::Media::Audio::{
     eCapture, eRender, EDataFlow, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE,
     DEVICE_STATE_ACTIVE, DEVICE_STATE_DISABLED, DEVICE_STATE_UNPLUGGED,
@@ -59,12 +61,19 @@ impl AudioEnumerator {
             let state = unsafe { device.GetState().unwrap_or(DEVICE_STATE_ACTIVE) };
             let is_connected = state == DEVICE_STATE_ACTIVE;
             let id = read_device_id(&device).unwrap_or_else(|_| "<unknown>".to_string());
-            let friendly_name = match read_device_friendly_name(&device) {
-                Ok(name) => name,
+            let (friendly_name, is_bluetooth) = match read_device_metadata(&device) {
+                Ok(meta) => meta,
                 Err(e) if is_orphaned_device_error(&e) => continue,
-                Err(_) => "<unknown>".to_string(),
+                Err(_) => ("<unknown>".to_string(), false),
             };
-            endpoints.push(AudioEndpoint::new(id, friendly_name, flow, is_connected, device));
+            endpoints.push(AudioEndpoint::new(
+                id,
+                friendly_name,
+                flow,
+                is_connected,
+                is_bluetooth,
+                device,
+            ));
         }
         Ok(endpoints)
     }
@@ -107,10 +116,18 @@ fn read_device_id(device: &IMMDevice) -> Result<String> {
     Ok(id)
 }
 
-fn read_device_friendly_name(device: &IMMDevice) -> Result<String> {
+fn read_device_metadata(device: &IMMDevice) -> Result<(String, bool)> {
     let store = unsafe { device.OpenPropertyStore(STGM_READ)? };
-    let prop = unsafe { store.GetValue(&PKEY_Device_FriendlyName)? };
-    Ok(prop.to_string())
+    let name = unsafe { store.GetValue(&PKEY_Device_FriendlyName)? }.to_string();
+    let enumerator = unsafe { store.GetValue(&PKEY_Device_EnumeratorName) }
+        .map(|p| p.to_string())
+        .unwrap_or_default();
+    Ok((name, is_bluetooth_enumerator(&enumerator)))
+}
+
+pub(crate) fn is_bluetooth_enumerator(enumerator: &str) -> bool {
+    let upper = enumerator.trim().to_ascii_uppercase();
+    upper.starts_with("BTHENUM") || upper.starts_with("BTHHFENUM") || upper.starts_with("BTHLE")
 }
 
 fn is_orphaned_device_error(err: &windows::core::Error) -> bool {
@@ -142,5 +159,15 @@ mod tests {
         assert_eq!(disconnected_mask.0 & DEVICE_STATE_NOTPRESENT.0, 0);
         assert_ne!(disconnected_mask.0 & DEVICE_STATE_DISABLED.0, 0);
         assert_ne!(disconnected_mask.0 & DEVICE_STATE_UNPLUGGED.0, 0);
+    }
+
+    #[test]
+    fn is_bluetooth_enumerator_detects_bth_stacks() {
+        assert!(is_bluetooth_enumerator("BTHENUM"));
+        assert!(is_bluetooth_enumerator("BTHHFENUM"));
+        assert!(is_bluetooth_enumerator("bthleenum"));
+        assert!(!is_bluetooth_enumerator("USB"));
+        assert!(!is_bluetooth_enumerator("HDAUDIO"));
+        assert!(!is_bluetooth_enumerator(""));
     }
 }

@@ -43,6 +43,8 @@ pub struct KnownEndpoint {
     pub friendly_name: String,
     pub flow: DataFlow,
     #[serde(default)]
+    pub is_bluetooth: bool,
+    #[serde(default)]
     pub last_seen: Option<u64>,
 }
 
@@ -204,7 +206,11 @@ impl AppSettingsStore {
             }
             let prev = self.known_endpoints.get(&ep.id);
             let metadata_changed = prev
-                .map(|p| p.friendly_name != ep.friendly_name || p.flow != ep.flow)
+                .map(|p| {
+                    p.friendly_name != ep.friendly_name
+                        || p.flow != ep.flow
+                        || p.is_bluetooth != ep.is_bluetooth
+                })
                 .unwrap_or(true);
             let stale_ts = prev
                 .and_then(|p| p.last_seen)
@@ -216,6 +222,7 @@ impl AppSettingsStore {
                     KnownEndpoint {
                         friendly_name: ep.friendly_name.clone(),
                         flow: ep.flow,
+                        is_bluetooth: ep.is_bluetooth,
                         last_seen: Some(now),
                     },
                 );
@@ -439,6 +446,7 @@ mod tests {
                 is_default_communications: true,
                 is_allowed: true,
                 is_connected: true,
+                is_bluetooth: false,
                 last_seen: None,
             },
             EndpointStatus {
@@ -451,6 +459,7 @@ mod tests {
                 is_default_communications: false,
                 is_allowed: false,
                 is_connected: false,
+                is_bluetooth: false,
                 last_seen: None,
             },
         ];

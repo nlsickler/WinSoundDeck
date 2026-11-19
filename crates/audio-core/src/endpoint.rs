@@ -24,6 +24,7 @@ pub struct AudioEndpoint {
     pub friendly_name: String,
     pub flow: DataFlow,
     pub is_connected: bool,
+    pub is_bluetooth: bool,
     device: IMMDevice,
 }
 
@@ -33,6 +34,7 @@ impl AudioEndpoint {
         friendly_name: String,
         flow: DataFlow,
         is_connected: bool,
+        is_bluetooth: bool,
         device: IMMDevice,
     ) -> Self {
         Self {
@@ -40,6 +42,7 @@ impl AudioEndpoint {
             friendly_name,
             flow,
             is_connected,
+            is_bluetooth,
             device,
         }
     }

@@ -281,6 +281,15 @@ fn remove_windows_endpoint(endpoint_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_bluetooth_settings() -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg("ms-settings:bluetooth")
+        .spawn()
+        .map_err(|e| format!("Failed to open Bluetooth settings: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn set_default_endpoint(endpoint_id: String, role: DeviceRole) -> Result<(), String> {
     ipc_call(IpcRequest::SetDefaultEndpoint { endpoint_id, role })?;
     Ok(())
@@ -452,6 +461,7 @@ fn main() {
             set_endpoint_allowed,
             forget_endpoint,
             remove_windows_endpoint,
+            open_bluetooth_settings,
             set_default_endpoint,
             set_include_disconnected,
         ])

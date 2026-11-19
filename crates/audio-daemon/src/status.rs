@@ -257,6 +257,7 @@ fn collect_raw_status(
                 is_default_communications: ep.id == *comm_id,
                 is_allowed: true,
                 is_connected: ep.is_connected,
+                is_bluetooth: ep.is_bluetooth,
                 last_seen: None,
             });
 
@@ -339,6 +340,7 @@ fn merge_known_offline_endpoints(
             is_default_communications: false,
             is_allowed: true,
             is_connected: false,
+            is_bluetooth: meta.is_bluetooth,
             last_seen: meta.last_seen,
         });
     }
@@ -360,6 +362,7 @@ mod tests {
             is_default_communications: true,
             is_allowed: true,
             is_connected: true,
+            is_bluetooth: false,
             last_seen: Some(1000),
         }];
         let mut known = HashMap::new();
@@ -368,6 +371,7 @@ mod tests {
             KnownEndpoint {
                 friendly_name: "Old Name".to_string(),
                 flow: DataFlow::Render,
+                is_bluetooth: false,
                 last_seen: Some(500),
             },
         );
@@ -376,6 +380,7 @@ mod tests {
             KnownEndpoint {
                 friendly_name: "Dock Audio".to_string(),
                 flow: DataFlow::Render,
+                is_bluetooth: true,
                 last_seen: Some(900),
             },
         );
@@ -387,6 +392,7 @@ mod tests {
         assert_eq!(endpoints[1].id, "dock-usb");
         assert_eq!(endpoints[1].friendly_name, "Dock Audio");
         assert!(!endpoints[1].is_connected);
+        assert!(endpoints[1].is_bluetooth);
         assert_eq!(endpoints[1].last_seen, Some(900));
     }
 }
