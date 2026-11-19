@@ -10,13 +10,33 @@ const { invoke } = window.__TAURI__.core;
 
 const collapsedActiveIds = new Set();
 const expandedInactiveIds = new Set();
+const expandedSubPidGroups = new Set();
 const explicitlyUncheckedIds = new Set();
 const rememberedOutputVolumes = new Map();
 let showIdleApps = false;
 let showOfflineApps = false;
 
 function appIdFor(s) {
-  return s.app_key || String(s.pid);
+  return s.pid > 0 ? String(s.pid) : s.app_key || "0";
+}
+
+function groupSessionsByApp(sessions) {
+  const groups = [];
+  const byKey = new Map();
+  for (const s of sessions) {
+    const key = (s.app_key || s.root_exe_name || s.exe_name || String(s.pid)).toLowerCase();
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, primary: s, sessions: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.sessions.push(s);
+    if (!group.primary.is_active && s.is_active) {
+      group.primary = s;
+    }
+  }
+  return groups;
 }
 
 function appDisplayName(s) {
@@ -81,36 +101,61 @@ function buildAppCard(onRefresh) {
   const body = document.createElement("div");
   body.className = "routing-outputs";
 
-  card.append(header, body);
+  const subPidsList = document.createElement("div");
+  subPidsList.className = "sub-pids-list collapsed";
+
+  card.append(header, body, subPidsList);
 
   const toggleExpand = () => {
-    const s = card._item;
-    if (!s) return;
-    const id = appIdFor(s);
+    const group = card._group;
+    if (!group) return;
+    const s = group.primary;
     if (s.is_active) {
-      if (collapsedActiveIds.has(id)) {
-        collapsedActiveIds.delete(id);
+      if (collapsedActiveIds.has(group.key)) {
+        collapsedActiveIds.delete(group.key);
       } else {
-        collapsedActiveIds.add(id);
+        collapsedActiveIds.add(group.key);
       }
-    } else if (expandedInactiveIds.has(id)) {
-      expandedInactiveIds.delete(id);
+    } else if (expandedInactiveIds.has(group.key)) {
+      expandedInactiveIds.delete(group.key);
     } else {
-      expandedInactiveIds.add(id);
+      expandedInactiveIds.add(group.key);
     }
     const expanded = s.is_active
-      ? !collapsedActiveIds.has(id)
-      : expandedInactiveIds.has(id);
+      ? !collapsedActiveIds.has(group.key)
+      : expandedInactiveIds.has(group.key);
     chevron.textContent = expanded ? "▾" : "▸";
     body.classList.toggle("collapsed", !expanded);
+    subPidsList.classList.toggle(
+      "collapsed",
+      !expanded || group.sessions.length <= 1 || !expandedSubPidGroups.has(group.key)
+    );
   };
   titleToggle.onclick = toggleExpand;
-  meta.onclick = toggleExpand;
-  meta.style.cursor = "pointer";
+  outCountBadge.onclick = toggleExpand;
+  outCountBadge.style.cursor = "pointer";
+
+  pidBadge.onclick = (e) => {
+    e.stopPropagation();
+    const group = card._group;
+    if (!group || group.sessions.length <= 1) {
+      toggleExpand();
+      return;
+    }
+    if (expandedSubPidGroups.has(group.key)) {
+      expandedSubPidGroups.delete(group.key);
+    } else {
+      expandedSubPidGroups.add(group.key);
+    }
+    const showSubs = expandedSubPidGroups.has(group.key);
+    pidBadge.textContent = `${group.sessions.length} PIDs ${showSubs ? "▾" : "▸"}`;
+    subPidsList.classList.toggle("collapsed", !showSubs);
+  };
 
   pinBtn.onclick = async () => {
-    const s = card._item;
-    if (!s) return;
+    const group = card._group;
+    if (!group) return;
+    const s = group.primary;
     await invoke("set_app_pinned", {
       pid: s.pid,
       appKey: s.app_key || null,
@@ -120,14 +165,18 @@ function buildAppCard(onRefresh) {
   };
 
   muteBtn.onclick = async () => {
-    const s = card._item;
-    explicitlyUncheckedIds.delete(appIdFor(s));
-    await invoke("set_session_mute", {
-      endpointId: s.endpoint_id,
-      pid: s.pid,
-      appKey: s.app_key || null,
-      muted: !s.muted,
-    });
+    const group = card._group;
+    if (!group) return;
+    const targetMuted = !group.sessions.every((x) => x.muted);
+    for (const s of group.sessions) {
+      explicitlyUncheckedIds.delete(appIdFor(s));
+      await invoke("set_session_mute", {
+        endpointId: s.endpoint_id,
+        pid: s.pid,
+        appKey: s.app_key || null,
+        muted: targetMuted,
+      });
+    }
     await onRefresh(true);
   };
 
@@ -298,6 +347,116 @@ function buildRoutingOutputRow(onRefresh) {
   return row;
 }
 
+function buildSubPidCard(onRefresh) {
+  const card = document.createElement("div");
+  card.className = "sub-pid-card";
+
+  const header = document.createElement("div");
+  header.className = "sub-pid-header";
+  const label = document.createElement("span");
+  label.className = "badge-tag";
+  const muteBtn = document.createElement("button");
+  muteBtn.className = "btn-icon-mute";
+  header.append(label, muteBtn);
+
+  const outputs = document.createElement("div");
+  outputs.className = "routing-outputs";
+
+  card.append(header, outputs);
+
+  muteBtn.onclick = async () => {
+    const s = card._item;
+    if (!s) return;
+    explicitlyUncheckedIds.delete(appIdFor(s));
+    await invoke("set_session_mute", {
+      endpointId: s.endpoint_id,
+      pid: s.pid,
+      appKey: s.app_key || null,
+      muted: !s.muted,
+    });
+    await onRefresh(true);
+  };
+
+  return card;
+}
+
+function syncSessionOutputs(
+  body,
+  s,
+  renderEndpoints,
+  loopbacks,
+  includeDisconnected,
+  peakPidAttr,
+  onRefresh
+) {
+  const appId = appIdFor(s);
+  const activeLoopbacks = loopbacks.filter((lb) =>
+    s.pid > 0 ? lb.pid === s.pid : s.app_key && lb.app_key === s.app_key
+  );
+  const visibleEndpoints = renderEndpoints.filter(
+    (ep) =>
+      (ep.is_allowed && (includeDisconnected || ep.is_connected)) ||
+      ep.id === s.endpoint_id ||
+      activeLoopbacks.some((lb) => lb.target_endpoint_id === ep.id)
+  );
+
+  syncKeyedList(
+    body,
+    visibleEndpoints,
+    (ep) => ep.id,
+    "No active output devices.",
+    () => buildRoutingOutputRow(onRefresh),
+    (row, ep) => {
+      const isPrimary = ep.id === s.endpoint_id;
+      const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
+      const isLoopback = Boolean(lb);
+      const enabled = (isPrimary && !explicitlyUncheckedIds.has(appId)) || isLoopback;
+
+      row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
+      row.classList.toggle("disabled", !enabled);
+
+      const cb = row.querySelector('input[type="checkbox"]');
+      cb.checked = enabled;
+
+      const nameEl = row.querySelector(".routing-output-name");
+      const offline = ep.is_connected === false;
+      nameEl.textContent = offline ? `${ep.friendly_name} (Offline)` : ep.friendly_name;
+      nameEl.title = ep.friendly_name;
+
+      const primaryTag = row.querySelector(".primary-slot");
+      primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
+
+      const slider = row.querySelector('input[type="range"]');
+      const label = row.querySelector(".vol-label");
+      slider.disabled = !enabled;
+      const rowMeterFill = row.querySelector(".slider-peak-fill");
+      if (rowMeterFill) {
+        const activePid = s.is_active && enabled && s.pid > 0 ? peakPidAttr : "";
+        rowMeterFill.dataset.peakPid = activePid;
+        if (!activePid) rowMeterFill.style.width = "0%";
+      }
+
+      const savedVol =
+        (s.saved_volumes && s.saved_volumes[ep.id]) ??
+        rememberedOutputVolumes.get(`${appId}:${ep.id}`) ??
+        0.5;
+      const vol = isPrimary ? s.volume : isLoopback ? lb.volume : savedVol;
+      rememberedOutputVolumes.set(`${appId}:${ep.id}`, vol);
+      if (rowMeterFill) {
+        rowMeterFill.dataset.peakScale = s.muted || !enabled ? "0" : String(vol);
+      }
+      const pctVal = pct(vol);
+      if (!isSliderDragging() && Number(slider.value) !== pctVal) {
+        slider.value = String(pctVal);
+      }
+      const rowVolFill = row.querySelector(".slider-vol-fill");
+      if (rowVolFill) rowVolFill.style.width = `${slider.value}%`;
+      label.textContent = enabled ? `${pctVal}%` : "--";
+    }
+  );
+  return activeLoopbacks;
+}
+
 function renderAppsList(
   container,
   sessions,
@@ -306,23 +465,38 @@ function renderAppsList(
   includeDisconnected,
   onRefresh
 ) {
+  const groups = groupSessionsByApp(sessions);
   syncKeyedList(
     container,
-    sessions,
-    (s) => `app:${appIdFor(s)}`,
+    groups,
+    (g) => `app:${g.key}`,
     "No audio sessions.",
     () => buildAppCard(onRefresh),
-    (card, s) => {
+    (card, group) => {
+      const s = group.primary;
       const appId = appIdFor(s);
+      card._group = group;
       card._item = s;
+      const allMuted = group.sessions.every((x) => x.muted);
       card.classList.toggle("inactive-card", !s.is_active);
-      card.classList.toggle("app-muted", Boolean(s.muted));
+      card.classList.toggle("app-muted", allMuted);
+
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;
       titleEl.title = name;
-      card.querySelector(".app-header-row > .card-meta > .badge-tag").textContent =
-        s.pid > 0 ? `PID ${s.pid}` : "Not running";
+
+      const pidBadge = card.querySelector(".app-header-row > .card-meta > .badge-tag");
+      const multiPid = group.sessions.length > 1;
+      const showSubs = multiPid && expandedSubPidGroups.has(group.key);
+      pidBadge.classList.toggle("badge-tag-btn", multiPid);
+      if (multiPid) {
+        pidBadge.textContent = `${group.sessions.length} PIDs ${showSubs ? "▾" : "▸"}`;
+        pidBadge.title = "Click to expand individual PIDs";
+      } else {
+        pidBadge.textContent = s.pid > 0 ? `PID ${s.pid}` : "Not running";
+        pidBadge.title = "";
+      }
 
       const pinBtn = card.querySelector(".btn-pin");
       pinBtn.classList.toggle("pinned", Boolean(s.is_pinned));
@@ -331,92 +505,71 @@ function renderAppsList(
         : "Pin app so it stays saved across restarts";
 
       const muteBtn = card.querySelector(".btn-icon-mute");
-      muteBtn.classList.toggle("muted", s.muted);
-      muteBtn.textContent = s.muted ? "🔇" : "🔉";
-      muteBtn.title = s.muted ? "Unmute" : "Mute";
+      muteBtn.classList.toggle("muted", allMuted);
+      muteBtn.textContent = allMuted ? "🔇" : "🔉";
+      muteBtn.title = allMuted ? "Unmute" : "Mute";
 
       if (!s.muted) {
         explicitlyUncheckedIds.delete(appId);
       }
-      const activeLoopbacks = loopbacks.filter((lb) =>
-        s.pid > 0 ? lb.pid === s.pid : s.app_key && lb.app_key === s.app_key
+
+      const expanded = s.is_active
+        ? !collapsedActiveIds.has(group.key)
+        : expandedInactiveIds.has(group.key);
+      card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
+      const body = card.querySelector(".routing-outputs");
+      body.classList.toggle("collapsed", !expanded);
+
+      const peakPidAttr = group.sessions
+        .filter((x) => x.pid > 0)
+        .map((x) => String(x.pid))
+        .join(",");
+      const activeLoopbacks = syncSessionOutputs(
+        body,
+        s,
+        renderEndpoints,
+        loopbacks,
+        includeDisconnected,
+        peakPidAttr,
+        onRefresh
       );
+
       const primaryChecked = !explicitlyUncheckedIds.has(appId);
       const activeCount = (primaryChecked ? 1 : 0) + activeLoopbacks.length;
-      card.querySelector(".badge-muted").textContent = s.muted
+      card.querySelector(".badge-muted").textContent = allMuted
         ? "Muted"
         : activeCount === 1
           ? "1 out"
           : `${activeCount} outs`;
 
-      const expanded = s.is_active
-        ? !collapsedActiveIds.has(appId)
-        : expandedInactiveIds.has(appId);
-      card.querySelector(".chevron").textContent = expanded ? "▾" : "▸";
-      const body = card.querySelector(".routing-outputs");
-      body.classList.toggle("collapsed", !expanded);
-
-      const visibleEndpoints = renderEndpoints.filter(
-        (ep) =>
-          (ep.is_allowed && (includeDisconnected || ep.is_connected)) ||
-          ep.id === s.endpoint_id ||
-          activeLoopbacks.some((lb) => lb.target_endpoint_id === ep.id)
-      );
-
-      syncKeyedList(
-        body,
-        visibleEndpoints,
-        (ep) => ep.id,
-        "No active output devices.",
-        () => buildRoutingOutputRow(onRefresh),
-        (row, ep) => {
-          const isPrimary = ep.id === s.endpoint_id;
-          const lb = activeLoopbacks.find((x) => x.target_endpoint_id === ep.id);
-          const isLoopback = Boolean(lb);
-          const enabled = (isPrimary && !explicitlyUncheckedIds.has(appId)) || isLoopback;
-
-          row._ctx = { session: s, endpoint: ep, isPrimary, isLoopback, activeLoopbacks };
-          row.classList.toggle("disabled", !enabled);
-
-          const cb = row.querySelector('input[type="checkbox"]');
-          cb.checked = enabled;
-
-          const nameEl = row.querySelector(".routing-output-name");
-          const offline = ep.is_connected === false;
-          nameEl.textContent = offline ? `${ep.friendly_name} (Offline)` : ep.friendly_name;
-          nameEl.title = ep.friendly_name;
-
-          const primaryTag = row.querySelector(".primary-slot");
-          primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
-
-          const slider = row.querySelector('input[type="range"]');
-          const label = row.querySelector(".vol-label");
-          slider.disabled = !enabled;
-          const rowMeterFill = row.querySelector(".slider-peak-fill");
-          if (rowMeterFill) {
-            const activePid = s.is_active && enabled && s.pid > 0 ? String(s.pid) : "";
-            rowMeterFill.dataset.peakPid = activePid;
-            if (!activePid) rowMeterFill.style.width = "0%";
+      const subPidsList = card.querySelector(".sub-pids-list");
+      subPidsList.classList.toggle("collapsed", !expanded || !showSubs);
+      if (multiPid && expanded && showSubs) {
+        syncKeyedList(
+          subPidsList,
+          group.sessions,
+          (sub) => `sub:${sub.pid}`,
+          "",
+          () => buildSubPidCard(onRefresh),
+          (subCard, sub) => {
+            subCard._item = sub;
+            subCard.querySelector(".badge-tag").textContent = `PID ${sub.pid}`;
+            const subMute = subCard.querySelector(".btn-icon-mute");
+            subMute.classList.toggle("muted", sub.muted);
+            subMute.textContent = sub.muted ? "🔇" : "🔉";
+            subMute.title = sub.muted ? "Unmute" : "Mute";
+            syncSessionOutputs(
+              subCard.querySelector(".routing-outputs"),
+              sub,
+              renderEndpoints,
+              loopbacks,
+              includeDisconnected,
+              String(sub.pid),
+              onRefresh
+            );
           }
-
-          const savedVol =
-            (s.saved_volumes && s.saved_volumes[ep.id]) ??
-            rememberedOutputVolumes.get(`${appId}:${ep.id}`) ??
-            0.5;
-          const vol = isPrimary ? s.volume : isLoopback ? lb.volume : savedVol;
-          rememberedOutputVolumes.set(`${appId}:${ep.id}`, vol);
-          if (rowMeterFill) {
-            rowMeterFill.dataset.peakScale = s.muted || !enabled ? "0" : String(vol);
-          }
-          const pctVal = pct(vol);
-          if (!isSliderDragging() && Number(slider.value) !== pctVal) {
-            slider.value = String(pctVal);
-          }
-          const rowVolFill = row.querySelector(".slider-vol-fill");
-          if (rowVolFill) rowVolFill.style.width = `${slider.value}%`;
-          label.textContent = enabled ? `${pctVal}%` : "--";
-        }
-      );
+        );
+      }
     }
   );
 }

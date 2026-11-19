@@ -732,6 +732,43 @@ button:hover {
   display: none;
 }
 
+.badge-tag-btn {
+  cursor: pointer;
+}
+
+.badge-tag-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.sub-pids-list {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sub-pids-list.collapsed {
+  display: none;
+}
+
+.sub-pid-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.sub-pid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .primary-slot {
   width: 20px;
   text-align: center;

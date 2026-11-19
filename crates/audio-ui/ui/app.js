@@ -75,8 +75,14 @@ async function pollPeaks() {
       el.style.width = `${Math.round(scalePeak(v) * scale)}%`;
     }
     for (const el of document.querySelectorAll("[data-peak-pid]")) {
-      const pid = el.dataset.peakPid;
-      const v = pid && peaks.sessions ? peaks.sessions[pid] ?? 0 : 0;
+      const pidAttr = el.dataset.peakPid;
+      let v = 0;
+      if (pidAttr && peaks.sessions) {
+        for (const pid of pidAttr.split(",")) {
+          const cur = peaks.sessions[pid] ?? 0;
+          if (cur > v) v = cur;
+        }
+      }
       const scale = Number(el.dataset.peakScale ?? 1);
       el.style.width = `${Math.round(scalePeak(v) * scale)}%`;
     }
