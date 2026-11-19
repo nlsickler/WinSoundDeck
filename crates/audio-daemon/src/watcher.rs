@@ -1,11 +1,12 @@
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use audio_core::{
-    AudioEnumerator, AudioEvent, ComGuard, DataFlow, PresetEngine, SessionNotificationGuard,
+    AudioEnumerator, AudioEvent, ComGuard, DataFlow, Preset, PresetEngine, SessionNotificationGuard,
 };
 
+use crate::debounce::Debouncer;
 use crate::state::DaemonState;
 
 fn arm_session_watchers(
@@ -23,6 +24,13 @@ fn arm_session_watchers(
     guards
 }
 
+fn active_preset(state: &Arc<Mutex<DaemonState>>) -> Option<Preset> {
+    state.lock().ok().and_then(|g| {
+        let id = g.config.active_preset_id.as_ref()?;
+        g.config.presets.iter().find(|p| &p.id == id).cloned()
+    })
+}
+
 pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let Ok(_com) = ComGuard::new() else { return };
@@ -35,12 +43,14 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
         };
 
         let mut _session_guards = arm_session_watchers(&enumerator, &tx);
+        let mut debouncer = Debouncer::new(Duration::from_millis(300));
 
         loop {
             if state.lock().map(|g| g.shutdown).unwrap_or(true) {
                 break;
             }
-            match rx.recv_timeout(Duration::from_millis(500)) {
+            let wait = debouncer.next_timeout(Instant::now(), Duration::from_millis(500));
+            match rx.recv_timeout(wait) {
                 Ok(AudioEvent::SessionCreated {
                     endpoint_id,
                     pid,
@@ -56,11 +66,7 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
                         } = *guard;
                         app_settings.apply_to_pid(&enumerator, pid, applied_pids, loopbacks);
                     }
-                    let active = state.lock().ok().and_then(|g| {
-                        let id = g.config.active_preset_id.as_ref()?;
-                        g.config.presets.iter().find(|p| &p.id == id).cloned()
-                    });
-                    if let Some(preset) = active {
+                    if let Some(preset) = active_preset(&state) {
                         let _ = PresetEngine::new(&enumerator).handle_session_created(
                             &preset,
                             &endpoint_id,
@@ -80,19 +86,19 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
                     }
                 }
                 Ok(AudioEvent::DeviceStateChanged { .. }) | Ok(AudioEvent::DeviceAdded { .. }) => {
-                    _session_guards.clear();
-                    _session_guards = arm_session_watchers(&enumerator, &tx);
-                    let active = state.lock().ok().and_then(|g| {
-                        let id = g.config.active_preset_id.as_ref()?;
-                        g.config.presets.iter().find(|p| &p.id == id).cloned()
-                    });
-                    if let Some(preset) = active {
-                        let _ = PresetEngine::new(&enumerator).apply_preset(&preset);
-                    }
+                    debouncer.trigger(Instant::now());
                 }
                 Ok(_) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+
+            if debouncer.take_if_due(Instant::now()) {
+                _session_guards.clear();
+                _session_guards = arm_session_watchers(&enumerator, &tx);
+                if let Some(preset) = active_preset(&state) {
+                    let _ = PresetEngine::new(&enumerator).apply_preset(&preset);
+                }
             }
         }
     })

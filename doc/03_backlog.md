@@ -2,10 +2,6 @@
 
 Remaining enhancements after the 10-step Steel Thread validation and initial UI/routing polish pass.
 
-## Audio Engine & Routing
-- **Hot-Plug Debouncing & Edge Cases:**
-  - Debounce rapid `DeviceStateChanged` / `DeviceAdded` bursts when USB/wireless headsets reconnect.
-
 ## Packaging & Polish
 - **Dual Distribution Targets (Portable + Installer):**
   - **Portable (`--features portable`):** Expose `audio-daemon`'s entrypoint as a library call behind a Cargo feature flag so `audio-ui.exe` can self-spawn with `--daemon` as a single self-contained `.exe`.

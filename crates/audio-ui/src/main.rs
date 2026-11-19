@@ -393,6 +393,14 @@ fn capture_window_state(win: &tauri::WebviewWindow) -> Option<WindowState> {
     })
 }
 
+fn flush_window_state(slot: &Mutex<Option<WindowState>>) {
+    if let Ok(guard) = slot.lock() {
+        if let Some(st) = *guard {
+            save_window_state(&window_state_path(), &st);
+        }
+    }
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -541,19 +549,9 @@ fn main() {
                     }
                 }
             }
-            WindowEvent::Focused(false) => {
-                if let Ok(guard) = event_win_state.lock() {
-                    if let Some(st) = *guard {
-                        save_window_state(&window_state_path(), &st);
-                    }
-                }
-            }
+            WindowEvent::Focused(false) => flush_window_state(&event_win_state),
             WindowEvent::CloseRequested { api, .. } => {
-                if let Ok(guard) = event_win_state.lock() {
-                    if let Some(st) = *guard {
-                        save_window_state(&window_state_path(), &st);
-                    }
-                }
+                flush_window_state(&event_win_state);
                 api.prevent_close();
                 let _ = window.hide();
             }

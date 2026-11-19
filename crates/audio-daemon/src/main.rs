@@ -1,4 +1,5 @@
 mod app_settings;
+mod debounce;
 mod handlers;
 mod state;
 mod status;
