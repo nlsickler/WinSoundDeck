@@ -48,10 +48,6 @@ function buildVisibilityCard(onRefresh) {
   name.className = "card-title";
   titleToggle.append(chevron, name);
 
-  const btTag = document.createElement("span");
-  btTag.className = "badge-tag collapsed";
-  btTag.textContent = "Bluetooth";
-
   const statusTag = document.createElement("span");
   statusTag.className = "badge-muted";
 
@@ -59,7 +55,7 @@ function buildVisibilityCard(onRefresh) {
   eyeBtn.className = "btn-eye";
   eyeBtn.textContent = "👁️";
 
-  header.append(titleToggle, btTag, statusTag, eyeBtn);
+  header.append(titleToggle, statusTag, eyeBtn);
 
   const body = document.createElement("div");
   body.className = "visibility-details collapsed";
@@ -195,7 +191,6 @@ function updateVisibilityCard(card, ep) {
   nameEl.textContent = ep.friendly_name;
   nameEl.title = ep.friendly_name;
 
-  card.querySelector(".badge-tag").classList.toggle("collapsed", !ep.is_bluetooth);
   card.querySelector(".badge-muted").textContent = formatLastSeen(ep);
 
   const eyeBtn = card.querySelector(".btn-eye");
