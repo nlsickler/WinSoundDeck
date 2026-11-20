@@ -1,251 +1,113 @@
-# **Audio Preset & Device Routing Manager**
-
-# **Personal Hack Specification & Agent Execution Plan**
+# Audio Mixer — High-Level Architecture & Specification
 
 ---
 
-## **1\. Executive Summary & Problem Statement**
+## 1. Executive Summary & Problem Statement
 
-Modern Windows desktop environments lack a lightweight native solution for orchestrating dynamic audio routing, application-level volume scaling, and hot-swappable hardware presets. Existing solutions across the landscape fall short for personal power-user workflows due to key architectural friction:
+Modern Windows desktop environments lack a lightweight native solution for orchestrating dynamic audio routing, per-application multi-output volume scaling, and hot-swappable hardware presets. Existing solutions fall short for power-user workflows due to key architectural friction:
 
-* **Flaws of Socket-Based Virtual Cable Loopbacks:** Tools relying on virtual audio cables or local TCP/gRPC loopback sockets (e.g., MixLine architectures) introduce non-trivial buffer latency, audio artifacts, and driver instability upon device sleep state transitions.  
-* **Limitations of Consumer UI Layer Tools:** Utilities like EarTrumpet offer convenient user interfaces for active session volumes but lack state persistence across hardware hot-plug events, contextual global profile switches (e.g., *Focus*, *Call*, *Media*), or automated rule engines for newly spawned background processes.  
-* **Overhead of Commercial Mixers:** Software suites like Voicemeeter impose dynamic kernel-driver overhead, complex setup, and overly complex visual abstractions for users who simply need deterministic, policy-based audio routing and dynamic gain staging.
+* **Flaws of Socket-Based Virtual Cable Loopbacks:** Tools relying on virtual audio cables or local TCP/gRPC loopback sockets introduce buffer latency, audio artifacts, and driver instability across device sleep/wake transitions.
+* **Limitations of Consumer UI Tools:** Utilities like EarTrumpet expose per-app session volumes but lack global profile switches, OS default role orchestration, multi-output teeing, and hot-plug preset enforcement.
+* **Overhead of Commercial Mixers:** Suites like Voicemeeter impose kernel-driver overhead and complex routing abstractions when the goal is deterministic, policy-based audio routing.
 
-The **Audio Preset & Device Routing Manager** is a pragmatic personal hacking project where the codebase will be generated primarily by AI agents with minimal manual coding. Priority is placed on crisp scope definition, fast failure, and pragmatic architecture. By directly leveraging the Windows Core Audio COM API architecture without kernel-mode driver modifications or network loopbacks, the system guarantees zero-overhead execution and seamless hot-swap resilience.
+**Audio Mixer** runs entirely in user mode directly against the **Windows Core Audio APIs (WASAPI)** and COM/WinRT policy interfaces—requiring zero kernel-mode drivers or network loopbacks. For key architectural trade-offs, see [doc/04_design_decisions.md](04_design_decisions.md).
 
 ---
 
-## **2\. Architecture Overview**
+## 2. Architecture Overview
 
-### **Platform Boundary & API Strategy**
+### Platform Boundary & API Strategy
 
-The application operates entirely within user mode, directly interfacing with the **Windows Core Audio APIs (WASAPI)** via Component Object Model (COM) interfaces.
-
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                       User Interface (UI)                       │
-│           System Tray / Tauri / Lightweight Native GUI          │
+│                    User Interface (audio-ui)                    │
+│       Tauri + System Tray (HTML/CSS/JS, non-blocking STA)       │
 └────────────────────────────────▲────────────────────────────────┘
                                  │ Inter-Process Communication
-                                 │ (Named Pipes / Native IPC)
+                                 │ (Windows Named Pipe JSON)
 ┌────────────────────────────────▼────────────────────────────────┐
-│                   Core Daemon Engine (Service)                  │
+│                  Background Daemon (audio-daemon)               │
 │  ┌────────────────────────┐         ┌────────────────────────┐  │
 │  │ IMMNotificationClient  │         │IAudioSessionNotification│ │
-│  │ (Device Hot-Plug Engine)│         │(Session Spawn Intercept)│ │
+│  │ + 300ms Debouncer      │         │(Session Spawn Intercept)│ │
 │  └───────────┬────────────┘         └───────────┬────────────┘  │
 │              │                                  │               │
 │              ▼                                  ▼               │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │           Core Audio API Engine (COM / WASAPI)            │  │
-│  │   IMMDeviceEnumerator  │  IAudioSessionManager2          │  │
-│  │   ISimpleAudioVolume   │  IAudioEndpointVolume           │  │
+│  │           Core Audio API Engine (audio-core)              │  │
+│  │   IMMDeviceEnumerator (0xB) │ IAudioSessionManager2       │  │
+│  │   ISimpleAudioVolume        │ IAudioEndpointVolume        │  │
+│  │   IAudioMeterInformation    │ IPolicyConfig / AppPolicy   │  │
+│  │   LoopbackTee (VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK)     │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └────────────────────────────────▲────────────────────────────────┘
-                                 │ Native COM Wrappers
+                                 │ Native COM / WASAPI
 ┌────────────────────────────────▼────────────────────────────────┐
 │                     Windows OS Kernel Audio                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The system targets the following primary WASAPI interfaces:
+### Workspace Crates
 
-* `IMMDeviceEnumerator`: Enumerates active, disabled, and disconnected audio endpoints (render/capture) and tracks system default endpoint updates.  
-* `IAudioSessionManager2`: Intercepts and enumerates audio control sessions across specific hardware endpoints.  
-* `ISimpleAudioVolume`: Controls per-application volume levels and mute states within specific audio sessions.  
-* `IAudioEndpointVolume`: Controls master gain, channel balance, and mute hardware flags on specific `IMMDevice` nodes.
+| Crate | Responsibility |
+| :--- | :--- |
+| **`audio-core`** | Narrow `unsafe` COM/WASAPI wrappers (`enumerator`, `endpoint`, `session`, `policy`, `loopback`, `events`, `preset`, `ipc`, `logging`). |
+| **`audio-daemon`** | Headless background service hosting `\\.\pipe\audio-mixer-daemon`, `watcher` (hot-plug & session events), `handlers/{mod,apps,presets}`, `status`, and `app_settings.json` persistence. |
+| **`audio-ui`** | Tauri v2 desktop + system tray UI (`Applications`, `System`, `Device Visibility`), multi-monitor `window_state.json` persistence, and on-demand UAC `pnputil` device removal. |
 
-### **Core Engine vs UI Decoupling**
+### Primary Windows Interfaces
 
-To maintain strict resource isolation and keep agent implementation clean, the architecture decouples execution into two distinct components:
-
-1. **Headless Background Daemon:** Runs continuously in the background using minimal memory (\<15 MB target). It registers event listeners (`IMMNotificationClient`, `IAudioSessionNotification`) to react instantly to hardware updates and process launches without relying on polling loops.  
-2. **Lightweight Desktop / Tray Interface:** Serves strictly as a visual controller and configuration interface. If the UI process terminates, the background engine maintains all volume rules, device states, and active routing policies seamlessly.
-
-### **Technology Stack Selection**
-
-| Layer | Primary Recommendation (Rust Core) | Secondary Option (.NET Core) |
-| :---- | :---- | :---- |
-| **Core Engine** | Rust (`windows-rs` crate) | C\# (.NET 8+ with NAudio / P/Invoke) |
-| **COM Interop** | Native COM bindings via `windows` crate | Managed COM Interop via `comtypes` / Native wrappers |
-| **UI Presentation** | Tauri (HTML/CSS/JS with system tray integration) | Native WPF / WinUI 3 (Lightweight system tray app) |
-| **Memory Footprint** | \~5 MB to 12 MB | \~30 MB to 60 MB |
-| **Execution Latency** | Direct native COM execution (\<1 ms overhead) | Managed runtime execution (\<3 ms overhead) |
+* `IMMDeviceEnumerator`: Enumerates render/capture endpoints using state mask `0xB` (`DEVICE_STATE_ACTIVE | DEVICE_STATE_DISABLED | DEVICE_STATE_UNPLUGGED`), skipping orphaned `DEVICE_STATE_NOTPRESENT` (`0x4`) registry entries and guarding against `0xE000020B` / `ERROR_NOT_FOUND`.
+* `IAudioSessionManager2` & `ISimpleAudioVolume`: Enumerates and controls per-process audio streams.
+* `IAudioEndpointVolume`: Controls hardware endpoint master volume and mute states (skipped for disconnected endpoints).
+* `IAudioMeterInformation`: Reads real-time `0.0..=1.0` peak levels for endpoints and active sessions via lightweight `GetPeaks` IPC polling (`75ms` when visible).
+* `IPolicyConfig` & `IAudioPolicyConfigFactory`: Sets OS default endpoints (`Multimedia`, `Console`, `Communications`) and per-app primary output routes.
+* `ActivateAudioInterfaceAsync` (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`): Implements `LoopbackTee` to mirror an application's audio to secondary output endpoints with independent volume scaling.
 
 ---
 
-## **3\. System Components**
+## 3. System Components
 
-### **Device State & Notification Engine**
+### Device State, Visibility & Hot-Plug Watcher
 
-This module maintains the internal real-time state of all available audio capture and render hardware. It implements the `IMMNotificationClient` interface to handle hardware events reactively:
+* **Reactive Hot-Plug Debouncing:** `IMMNotificationClient` events (`DeviceStateChanged`, `DeviceAdded`) are coalesced through a `300ms` `Debouncer` in `watcher.rs` so USB-C dock or headset bursts trigger a single session-watcher re-arm and preset re-apply once settled.
+* **Device Visibility Allowlist & Offline Cache:** `app_settings.json` stores `allowed_endpoints` and `known_endpoints` (`{ friendly_name, flow, is_bluetooth, last_seen }`), keeping previously seen docks/displays available for preset setup even when `NOTPRESENT`, without polling orphaned WASAPI entries.
+* **Bluetooth & Ghost Cleanup:** `PKEY_Device_EnumeratorName` identifies paired Bluetooth stacks (`BTHENUM`, `BTHHFENUM`, `BTHLE*`) to link directly to `ms-settings:bluetooth`, while non-Bluetooth offline ghosts can be forgotten from Audio Mixer or uninstalled via elevated `pnputil /remove-device`.
 
-* `OnDeviceStateChanged`: Detects when hardware is connected, unplugged, enabled, or disabled.  
-* `OnDefaultDeviceChanged`: Updates active routing maps when the OS default audio render/capture path shifts.  
-* `OnPropertyValueChanged`: Captures external volume changes (e.g., physical volume knobs on headsets or DACs).
+### Session Manager & Application Pinning
 
-### **Session Manager & Application Interceptor**
+* **Root-Process Matching:** Uses `CreateToolhelp32Snapshot` (`resolve_root_exe_path` / `resolve_root_exe_name`) so multi-process apps map consistently by lowercase root executable path (`app_key`).
+* **Pinning (`📌`) vs. Ephemeral State:** Pinned apps persist their primary route, secondary loopbacks, per-output volumes, and mute state to `app_settings.json` across restarts; unpinned apps live only in daemon memory until cleared via **Clear Unpinned** or daemon exit.
+* **Multi-Output Ratio Scaling:** Because WASAPI process loopback captures post-primary-fader audio, `audio-daemon` enforces a primary-session floor when secondary loopbacks are audible, scales loopback gain by `secondary_volume / primary_volume`, and migrates primary ownership if the primary output is unchecked while a loopback remains active.
 
-The Session Manager monitors active audio streams created by applications. To prevent incorrect identification of complex multi-window applications, session matching is explicitly bound to the process executable path and binary image name (`GetProcessImageFileName`), completely ignoring variable window titles.
+### Global Preset Engine (`presets.json`)
 
-* Registers `IAudioSessionNotification` on all active endpoint session managers.  
-* Triggers automatic gain scaling and application routing rules whenever a target binary (e.g., `spotify.exe`, `ms-teams.exe`) opens an audio stream.
+* **Global Multi-Endpoint Presets:** Each `Preset` stores `endpoints` (`EndpointTarget` with `endpoint_id`, `friendly_name_pattern`, `volume`, `muted`, `default_roles`), `app_routes` (`AppRouteRule`), and `app_loopbacks` (`AppLoopbackRule`), coordinated by a single global `active_preset_id`.
+* **Snapshot & Restore:** Applying a preset snapshots pre-preset hardware volumes/mutes and OS default roles so clearing the active preset restores the prior hardware state cleanly.
 
-### **Preset Storage & Serialization Engine**
+### UI & System Tray Client (`audio-ui`)
 
-Provides a rigorous, unambiguous definition of the Audio Preset data contract, enforcement state machine, and conflict resolution rules to ensure deterministic execution across dynamic audio device events.
-
-```json
-{
-  "version": "1.0.0",
-  "active_preset_id": "preset_work_01",
-  "presets": [
-    {
-      "id": "preset_work_01",
-      "name": "Focus & Calls",
-      "target_device_match": {
-        "endpoint_id": "{0.0.0.00000000}.{a1b2c3d4-e5f6-7890-abcd-ef1234567890}",
-        "friendly_name_pattern": "Headphone (Realtek Audio)"
-      },
-      "device_role": "DefaultCommunication",
-      "master_settings": {
-        "master_volume": 0.85,
-        "master_mute": false
-      },
-      "default_fallback_volume": 1.0,
-      "app_rules": [
-        {
-          "executable_name": "ms-teams.exe",
-          "target_volume_scalar": 1.0,
-          "is_muted": false
-        },
-        {
-          "executable_name": "spotify.exe",
-          "target_volume_scalar": 0.30,
-          "is_muted": false
-        }
-      ]
-    }
-  ]
-}
-```
-
-#### **1\. Preset Data Contract & Scope**
-
-* **Device Binding & Match Strategy:** Presets explicitly target dynamic hardware endpoints by matching stable Windows Core Audio `Endpoint ID` strings and partial friendly device name patterns.  
-* **Master Endpoint Gain & Mute:** Defines normalized hardware gain (`0.0` to `1.0`) and master hardware mute flags applied directly on the target endpoint.  
-* **Default Fallback Application Volume:** Establishes a deterministic default volume scalar (e.g., `1.0`) for unlisted processes initializing audio streams on the bound device.  
-* **Target Process Volume Map:** Maps normalized binary executable image names (e.g., `ms-teams.exe -> 1.0`, `spotify.exe -> 0.30`) to target gain scalars and mute parameters.  
-* **Device Role Assignment:** Optionally configures Windows OS role routing assignments (e.g., `Default Multimedia` vs. `Default Communication` device roles).
-
-#### **2\. Lifecycle & Enforcement Logic (State Machine)**
-
-3. **Trigger Event:** Fired when a user initiates a profile switch OR when a target audio hardware endpoint connects or transitions to an active state.  
-4. **Step 1 (Master Gain Application):** Set master endpoint volume levels and mute status via `IAudioEndpointVolume`.  
-5. **Step 2 (Active Session Enumeration):** Iterate existing sessions via `IAudioSessionManager2` on the target device, match by image name, and apply target volume scalars immediately using `ISimpleAudioVolume`.  
-6. **Step 3 (Table Registration):** Register active preset rules into an in-memory *Active Profile Enforcement Table*.  
-7. **Step 4 (Reactive Catch):** When `IAudioSessionNotification` fires upon a late process stream launch, perform a lookup in the active enforcement table and clamp session volume prior to the first playback buffer execution.
-
-#### **3\. Conflict & State Boundary Rules**
-
-* **Manual Volume Adjustments:** Real-time manual slider adjustments made via Windows Volume Mixer or inline application controls override active session levels immediately, but do NOT mutate the underlying stored preset JSON file unless explicitly saved via the UI.  
-* **Multi-Device Independence:** Each connected physical device maintains its own isolated `Active Preset ID`. Switching or modifying presets on Device A leaves Device B settings completely un-touched unless a global multi-device profile switch is triggered.
-
-### **UI & System Tray Client**
-
-The frontend interface provides intuitive control over complex audio routing:
-
-* **System Tray Integration:** Fast access to quick-switch preset profiles via context menu.  
-* **Visual Status Indicators:** Badges indicating real-time connection status (Connected, Disconnected, Fallback Active).  
-* **Active Mixer Panel:** Displays master volume sliders along with real-time per-app volume sliders mapped to active process executables.
+* **Non-Blocking STA Startup:** `audio-ui` initializes the tray icon immediately on Tauri's STA thread and spawns `audio-daemon` / populates tray preset items off-thread to prevent UI hangs.
+* **Three-Tab Layout:**
+  * **Applications:** Split into **Playing**, **Idle** (live silent WASAPI PIDs), and **Offline** (not running, sorted Pinned-first then A–Z) shelves, with multi-PID grouping (`N PIDs ▸`) and per-output routing sliders.
+  * **System:** Allowed outputs and inputs with **Default** / **Comms** OS role toggles, master volume/mute, and unified in-track peak meters.
+  * **Device Visibility:** Sorted by **Connected → Last Seen → Name** with `👁️` visibility toggles and expandable cleanup controls.
+* **Window Persistence:** Saves `window_state.json` (`x`, `y`, `width`, `height`) validated against `available_monitors()` so multi-monitor placements (e.g., PowerToys FancyZones) restore reliably and fall back safely when a monitor is unplugged.
 
 ---
 
-## **4\. Edge Cases & Resilience Strategy**
+## 4. Edge Cases & Resilience Strategy
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       Session Interception Flow                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                         [ New Audio Session Created ]
-                                       │
-                                       ▼
-                     Is Session Parent Multi-Process/Electron?
-                                      / \
-                                     /   \
-                                   YES    NO
-                                   /       \
-                                  ▼         ▼
-    Resolve Root Process via Toolhelp32   Direct Executable Matching
-    Inspect Image Name (e.g. chrome.exe)  (e.g. custom_app.exe)
-                                  \         /
-                                   \       /
-                                    ▼     ▼
-                        ┌─────────────────────────┐
-                        │   Match Active Preset   │
-                        │    & Evaluate Rules     │
-                        └────────────┬────────────┘
-                                     │
-                                     ▼
-                    Application Currently Producing Audio?
-                                    / \
-                                   /   \
-                                 YES    NO
-                                 /       \
-                                ▼         ▼
-                  Apply Volume    Register Ephemeral Session Listener
-                  Immediately     (Apply Rules upon Audio Stream Start)
-```
-
-### **Multi-Process & Electron Application Handling**
-
-Modern frameworks (Chromium, Electron, Teams, Spotify) spawn multiple worker processes under different Process IDs (PIDs), while audio is often initialized by a secondary audio-renderer sub-process.
-
-* **Resolution:** When an audio session initializes, the engine queries the process tree using `CreateToolhelp32Snapshot` and `OpenProcessToken` to resolve the root parent executable name. All sub-process sessions are aggregated and managed under a single executable domain rule (e.g., grouping all `chrome.exe` audio instances into one logical slider).
-
-### **Ephemeral & Delayed Session Handling**
-
-Applications like web browsers or communication platforms often initialize audio devices late or destroy sessions when idle, causing lost volume settings when audio resumes later.
-
-* **Resolution:** The background daemon maintains an internal registry of *Pending Preset Policies*. When a process initializes an audio session 10 minutes after a preset is activated, the engine catches the `OnSessionCreated` event, checks the pending policy map, and applies the volume rules before the first audio frame reaches the output buffer.
-
-### **Clean IPC & Local Execution**
-
-* **Zero Socket IPC:** Avoids using local TCP, UDP, or gRPC loopback interfaces, eliminating overhead, port conflicts, and firewall complications.  
-* **Native Windows IPC:** Inter-process communication between the background engine and the tray UI relies entirely on standard Windows Named Pipes or native COM RPC mechanisms for low overhead.
-
-### **Audio Input Device (Microphone) Tracking**
-
-* Provides full support for capture devices via `IAudioEndpointVolume`.  
-* Tracks hardware gain levels, peak meters, and global mute flags independently of output paths.  
-* Supports dedicated hardware mute notification hooks, maintaining sync between physical headset mute buttons and software status indicators.
+* **Ephemeral & Late Audio Sessions:** `IAudioSessionNotification` catches newly spawned streams (`OnSessionCreated`) and immediately applies both saved `app_settings` (`apply_to_pid`) and any active preset rules.
+* **Zero-Socket Named Pipe IPC:** Communication between `audio-ui` and `audio-daemon` uses line-delimited JSON over `\\.\pipe\audio-mixer-daemon`, avoiding TCP port conflicts and firewall prompts.
+* **Capture (Microphone) Support:** Capture endpoints support master volume, mute, OS Default / Communications role assignment, peak meters, and **Device Visibility** filtering.
 
 ---
 
-## **5\. Steel Thread: High-Risk End-to-End Validation**
+## 5. Changelog
 
-### **Why This Steel Thread First**
-
-Validates the nastiest technical risk upfront: verifying whether agent-generated code can actually bind to Windows WASAPI COM interfaces in user mode, discover an active endpoint (e.g., Open Ear or Closed Ear headset), intercept an active audio session (e.g., Spotify or Teams), and force a volume scalar change without crashing, deadlocking, or locking audio handles.
-
-### **Minimal Functional Slice**
-
-* **Hardcoded Targets:** Hardcode target process (e.g., `spotify.exe` or `ms-teams.exe`) and target volume scalar (e.g., `0.30`) directly in code—no UI, no dynamic presets, no database persistence.  
-* **Execution Environment:** Pure console/CLI application or barebones script/binary target.  
-* **Endpoint Enumeration:** Enumerate the active playback endpoint using partial friendly name matching.  
-* **Session Control Sequence:** Bind to `IAudioSessionManager2`, iterate active sessions, match target process image name, and invoke `ISimpleAudioVolume::SetMasterVolume`.  
-* **Optional Quick-Probe:** Register `IAudioSessionNotification` to verify async callback firing when the target app begins streaming audio.
-
-### **Corners Cut (Fail Fast Strategy)**
-
-* No complex error recovery or retry loops.  
-* Hardcoded device match strings.  
-* Zero IPC implementation, zero UI elements.  
-* Unwrapped raw COM calls / unsafe blocks allowed for immediate verification.  
-* Immediate process exit on completion.
-
-### **Risk Retirement Criteria**
-
-The core technical risk is retired once the minimal binary executes and successfully forces a volume level change on an active session via WASAPI COM in user mode without requiring driver injection, loopback socket delays, or hitting COM threading deadlocks.
+* **2026-11-19 (Spec Alignment Update):**
+  * Replaced the initial per-device preset model and `.NET Core` comparison table with the implemented **Rust workspace** (`audio-core`, `audio-daemon`, `audio-ui`) and **global multi-endpoint preset** contract (`presets.json` + `app_settings.json`).
+  * Documented user-mode **process loopback (`LoopbackTee`)**, `IAudioPolicyConfigFactory` per-app routing, `IAudioMeterInformation` live in-track peak meters, **Application Pinning (`📌`)**, and multi-PID session grouping.
+  * Documented the **`0xB` WASAPI mask**, `known_endpoints` offline caching (`last_seen`, Bluetooth detection, UAC `pnputil` cleanup), `300ms` hot-plug `Debouncer`, non-blocking Tauri STA startup, and multi-monitor `window_state.json` persistence.
+  * Removed the retired Section 5 **Steel Thread** spike specification (`crates/steel-thread` was retired after validating user-mode WASAPI/COM).
