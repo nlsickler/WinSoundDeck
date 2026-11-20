@@ -31,3 +31,22 @@ Long Windows audio endpoint names (e.g., `Speakers (HyperX Cloud II Wireless)`) 
 
 ### Future Options
 - If we want to reduce friction later, we can add a deep link from **System** / **Device Visibility** directly into Windows Sound Settings (`ms-settings:sound-devices`), or introduce optional local UI-only aliases if users want to override the parenthetical hardware suffix that Windows preserves.
+
+---
+
+## 3. User-Mode Process Loopback (`LoopbackTee`) over Kernel Virtual Audio Drivers
+
+**Date:** 2026-11-19
+
+### Context
+Supporting simultaneous multi-output routing per application (e.g., sending an app's audio to both a headset and desktop speakers with independent per-output volume sliders) requires teeing a process's audio stream to secondary endpoints.
+
+### Decision
+Use Windows' native **user-mode process loopback** (`AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS` via `ActivateAudioInterfaceAsync` on `VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`, implemented in `crates/audio-core/src/loopback.rs`) combined with Windows' per-app default endpoint policy (`IAudioPolicyConfigFactory`), rather than building or bundling a kernel-mode virtual audio cable / WDM driver or a local socket loopback proxy.
+
+### Trade-Offs & Rationale
+- **No Driver Signing or Admin Install Friction:** Runs 100% in user mode, making it portable and deployable on locked-down enterprise machines without kernel driver installation, WHQL signing, or virtual sound cards cluttering Windows Sound settings.
+- **Hot-Plug & Sleep Resilience:** Avoids virtual-cable buffer stalls and driver state desyncs when USB-C docks, monitors, or Bluetooth headsets sleep or reconnect.
+- **Accepted Constraints:**
+  - WASAPI process loopback taps the app's rendered stream *after* its primary session attenuation (`ISimpleAudioVolume`), so `audio-daemon` maintains a minimum floor on the primary session when a secondary loopback is audible and scales loopback gain by the ratio of `secondary_volume / primary_volume` (migrating the primary route to a secondary output if the primary output is unchecked).
+  - Routing and loopback operate at the Windows process (`PID`) boundary rather than inside a browser's internal audio mixer.
