@@ -94,7 +94,7 @@ function buildAppCard(onRefresh) {
   outCountBadge.className = "badge-muted";
   const pidBadge = document.createElement("span");
   pidBadge.className = "badge-tag pid-badge";
-  meta.append(outCountBadge, pidBadge);
+  meta.append(pidBadge, outCountBadge);
 
   header.append(titleToggle, meta, pinBtn, muteBtn);
 
@@ -366,9 +366,7 @@ function renderAppsList(
       const activeCount = (primaryChecked ? 1 : 0) + activeLoopbacks.length;
       card.querySelector(".badge-muted").textContent = allMuted
         ? "Muted"
-        : activeCount === 1
-          ? "1 out"
-          : `${activeCount} outs`;
+        : `${activeCount} out(s)`;
 
       const subPidsList = card.querySelector(".sub-pids-list");
       subPidsList.classList.toggle("collapsed", !expanded || !showSubs);
