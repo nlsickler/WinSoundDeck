@@ -223,7 +223,7 @@ foreach ($file in @("presets.json", "app_settings.json")) {
     $null = $sb.AppendLine("")
 }
 
-$logFiles = Get-ChildItem -Path $appDataDir, $localAppDataDir, "." -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
+$logFiles = Get-ChildItem -Path $appDataDir, $localAppDataDir -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
 Select-Object -First 5
 foreach ($lf in $logFiles) {
     $null = $sb.AppendLine("### Log: $($lf.FullName) (last 100 lines)")
