@@ -51,14 +51,111 @@ export function clearPrimaryUnchecked(appId) {
   explicitlyUncheckedIds.delete(appId);
 }
 
+async function toggleRouting(ctx, nextEnabled, onRefresh) {
+  if (!ctx) return;
+  const { session, endpoint, isPrimary, isLoopback, activeLoopbacks } = ctx;
+  const appId = appIdFor(session);
+  const appKey = session.app_key || null;
+  if (isPrimary) {
+    if (nextEnabled) {
+      explicitlyUncheckedIds.delete(appId);
+      await invoke("set_session_mute", {
+        endpointId: session.endpoint_id,
+        pid: session.pid,
+        appKey,
+        muted: false,
+      });
+    } else {
+      const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
+      if (fallback) {
+        explicitlyUncheckedIds.delete(appId);
+        const fallbackVol = fallback.volume;
+        await invoke("route_app", {
+          pid: session.pid,
+          appKey,
+          flow: "Render",
+          endpointId: fallback.target_endpoint_id,
+        });
+        await new Promise((r) => setTimeout(r, 250));
+        await invoke("stop_loopback", {
+          pid: session.pid,
+          appKey,
+          targetEndpointId: fallback.target_endpoint_id,
+        });
+        await invoke("set_app_output_volume", {
+          pid: session.pid,
+          appKey,
+          endpointId: fallback.target_endpoint_id,
+          volume: fallbackVol,
+          finalize: true,
+        });
+      } else {
+        explicitlyUncheckedIds.add(appId);
+        await invoke("set_session_mute", {
+          endpointId: session.endpoint_id,
+          pid: session.pid,
+          appKey,
+          muted: true,
+        });
+      }
+    }
+  } else if (nextEnabled && !isLoopback) {
+    const remembered =
+      (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
+      rememberedOutputVolumes.get(`${appId}:${endpoint.id}`) ??
+      0.5;
+    if (explicitlyUncheckedIds.has(appId) && activeLoopbacks.length === 0) {
+      explicitlyUncheckedIds.delete(appId);
+      await invoke("route_app", {
+        pid: session.pid,
+        appKey,
+        flow: "Render",
+        endpointId: endpoint.id,
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      await invoke("set_session_mute", {
+        endpointId: endpoint.id,
+        pid: session.pid,
+        appKey,
+        muted: false,
+      });
+      await invoke("set_app_output_volume", {
+        pid: session.pid,
+        appKey,
+        endpointId: endpoint.id,
+        volume: remembered,
+        finalize: true,
+      });
+    } else {
+      await invoke("start_loopback", {
+        pid: session.pid,
+        appKey,
+        targetEndpointId: endpoint.id,
+        volume: remembered,
+      });
+      await invoke("set_app_output_volume", {
+        pid: session.pid,
+        appKey,
+        endpointId: endpoint.id,
+        volume: remembered,
+        finalize: true,
+      });
+    }
+  } else if (!nextEnabled && isLoopback) {
+    await invoke("stop_loopback", {
+      pid: session.pid,
+      appKey,
+      targetEndpointId: endpoint.id,
+    });
+  }
+  await onRefresh(true);
+}
+
 export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
   const row = document.createElement("div");
   row.className = vertical
     ? "routing-output-row device-fader-strip"
     : "routing-output-row";
-
-  const cb = document.createElement("input");
-  cb.type = "checkbox";
 
   const icon = document.createElement("img");
   icon.className = vertical
@@ -71,130 +168,36 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
     ? "routing-output-name strip-name"
     : "routing-output-name";
 
-  const primaryTag = document.createElement("span");
-  primaryTag.className = "badge-tag primary-slot";
-  primaryTag.textContent = "P";
-  primaryTag.title = "Primary Output";
-
   const { wrap: sliderWrap, slider } = createMeterSlider();
 
   const label = document.createElement("span");
   label.className = vertical ? "vol-label strip-vol" : "vol-label";
 
   if (vertical) {
-    const top = document.createElement("div");
-    top.className = "strip-top";
-    top.append(cb, primaryTag);
-
     const stage = document.createElement("div");
     stage.className = "device-fader-stage";
     stage.append(sliderWrap);
 
-    row.append(top, icon, name, stage, label);
+    const toggleFromStrip = () => {
+      if (!row._ctx) return;
+      toggleRouting(row._ctx, !row._ctx.enabled, onRefresh);
+    };
+    icon.onclick = toggleFromStrip;
+    name.onclick = toggleFromStrip;
+
+    row.append(icon, name, stage, label);
   } else {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.onchange = () => toggleRouting(row._ctx, cb.checked, onRefresh);
+
+    const primaryTag = document.createElement("span");
+    primaryTag.className = "badge-tag primary-slot";
+    primaryTag.textContent = "P";
+    primaryTag.title = "Primary Output";
+
     row.append(cb, icon, name, primaryTag, sliderWrap, label);
   }
-
-  cb.onchange = async () => {
-    const ctx = row._ctx;
-    if (!ctx) return;
-    const { session, endpoint, isPrimary, isLoopback, activeLoopbacks } = ctx;
-    const appId = appIdFor(session);
-    const appKey = session.app_key || null;
-    if (isPrimary) {
-      if (cb.checked) {
-        explicitlyUncheckedIds.delete(appId);
-        await invoke("set_session_mute", {
-          endpointId: session.endpoint_id,
-          pid: session.pid,
-          appKey,
-          muted: false,
-        });
-      } else {
-        const fallback = activeLoopbacks.find((lb) => lb.target_endpoint_id !== endpoint.id);
-        if (fallback) {
-          explicitlyUncheckedIds.delete(appId);
-          const fallbackVol = fallback.volume;
-          await invoke("route_app", {
-            pid: session.pid,
-            appKey,
-            flow: "Render",
-            endpointId: fallback.target_endpoint_id,
-          });
-          await new Promise((r) => setTimeout(r, 250));
-          await invoke("stop_loopback", {
-            pid: session.pid,
-            appKey,
-            targetEndpointId: fallback.target_endpoint_id,
-          });
-          await invoke("set_app_output_volume", {
-            pid: session.pid,
-            appKey,
-            endpointId: fallback.target_endpoint_id,
-            volume: fallbackVol,
-            finalize: true,
-          });
-        } else {
-          explicitlyUncheckedIds.add(appId);
-          await invoke("set_session_mute", {
-            endpointId: session.endpoint_id,
-            pid: session.pid,
-            appKey,
-            muted: true,
-          });
-        }
-      }
-    } else if (cb.checked && !isLoopback) {
-      const remembered =
-        (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
-        rememberedOutputVolumes.get(`${appId}:${endpoint.id}`) ??
-        0.5;
-      if (explicitlyUncheckedIds.has(appId) && activeLoopbacks.length === 0) {
-        explicitlyUncheckedIds.delete(appId);
-        await invoke("route_app", {
-          pid: session.pid,
-          appKey,
-          flow: "Render",
-          endpointId: endpoint.id,
-        });
-        await new Promise((r) => setTimeout(r, 250));
-        await invoke("set_session_mute", {
-          endpointId: endpoint.id,
-          pid: session.pid,
-          appKey,
-          muted: false,
-        });
-        await invoke("set_app_output_volume", {
-          pid: session.pid,
-          appKey,
-          endpointId: endpoint.id,
-          volume: remembered,
-          finalize: true,
-        });
-      } else {
-        await invoke("start_loopback", {
-          pid: session.pid,
-          appKey,
-          targetEndpointId: endpoint.id,
-          volume: remembered,
-        });
-        await invoke("set_app_output_volume", {
-          pid: session.pid,
-          appKey,
-          endpointId: endpoint.id,
-          volume: remembered,
-          finalize: true,
-        });
-      }
-    } else if (!cb.checked && isLoopback) {
-      await invoke("stop_loopback", {
-        pid: session.pid,
-        appKey,
-        targetEndpointId: endpoint.id,
-      });
-    }
-    await onRefresh(true);
-  };
 
   slider.onpointerdown = () => setSliderDragging(true);
   slider.onpointercancel = () => setSliderDragging(false);
@@ -247,11 +250,11 @@ export function updateRoutingRow(
   const isLoopback = Boolean(lb);
   const enabled = (isPrimary && !explicitlyUncheckedIds.has(appId)) || isLoopback;
 
-  row._ctx = { session, endpoint, isPrimary, isLoopback, activeLoopbacks };
+  row._ctx = { session, endpoint, isPrimary, isLoopback, activeLoopbacks, enabled };
   row.classList.toggle("disabled", !enabled);
 
   const cb = row.querySelector('input[type="checkbox"]');
-  cb.checked = enabled;
+  if (cb) cb.checked = enabled;
 
   const iconEl = row.querySelector(".app-icon");
   if (iconEl) {
@@ -269,7 +272,7 @@ export function updateRoutingRow(
   row.title = labelTitle || labelText;
 
   const primaryTag = row.querySelector(".primary-slot");
-  primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
+  if (primaryTag) primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
 
   const slider = row.querySelector('input[type="range"]');
   const label = row.querySelector(".vol-label");

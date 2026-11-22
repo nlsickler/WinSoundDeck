@@ -910,18 +910,13 @@ button:hover {
   padding: 6px 4px;
 }
 
-.strip-top {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
+.device-fader-strip .app-icon,
+.device-fader-strip .strip-name {
+  cursor: pointer;
 }
 
-.strip-top .primary-slot {
-  width: auto;
-  font-size: 9px;
-  padding: 1px 4px;
+.device-fader-strip .app-icon:hover {
+  transform: scale(1.08);
 }
 
 .strip-name {
