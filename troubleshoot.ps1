@@ -205,16 +205,21 @@ $null = $sb.AppendLine("")
 $null = $sb.AppendLine("## 5. WinSoundDeck Config & Logs")
 $appDataDir = Join-Path $env:APPDATA "winsounddeck"
 $localAppDataDir = Join-Path $env:LOCALAPPDATA "winsounddeck"
-$null = $sb.AppendLine("- APPDATA path: ``$appDataDir``")
-$null = $sb.AppendLine("- LOCALAPPDATA path: ``$localAppDataDir``")
+$null = $sb.AppendLine("- APPDATA path: ``%APPDATA%\winsounddeck``")
+$null = $sb.AppendLine("- LOCALAPPDATA path: ``%LOCALAPPDATA%\winsounddeck``")
 $null = $sb.AppendLine("")
 
 foreach ($file in @("presets.json", "app_settings.json")) {
     $p = Join-Path $appDataDir $file
     $null = $sb.AppendLine("### $file")
     if (Test-Path $p) {
+        $content = Get-Content -Path $p -Raw
+        if ($file -eq "app_settings.json") {
+            # Redact full Windows executable paths down to just the executable filename
+            $content = [regex]::Replace($content, '[A-Za-z]:\\\\(?:[^"\\r\\n]+\\\\)+([^"\\\\\\r\\n]+\.exe)', '$1', 'IgnoreCase')
+        }
         $null = $sb.AppendLine('```json')
-        $null = $sb.AppendLine((Get-Content -Path $p -Raw))
+        $null = $sb.AppendLine($content)
         $null = $sb.AppendLine('```')
     }
     else {
@@ -226,12 +231,22 @@ foreach ($file in @("presets.json", "app_settings.json")) {
 $logFiles = Get-ChildItem -Path $appDataDir, $localAppDataDir -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
 Select-Object -First 5
 foreach ($lf in $logFiles) {
-    $null = $sb.AppendLine("### Log: $($lf.FullName) (last 100 lines)")
+    $displayPath = $lf.FullName.Replace($appDataDir, '%APPDATA%\winsounddeck').Replace($localAppDataDir, '%LOCALAPPDATA%\winsounddeck')
+    $null = $sb.AppendLine("### Log: $displayPath (last 100 lines)")
     $null = $sb.AppendLine('```text')
     $null = $sb.AppendLine(((Get-Content -Path $lf.FullName -Tail 100) -join "`n"))
     $null = $sb.AppendLine('```')
     $null = $sb.AppendLine("")
 }
 
-Set-Content -Path $OutFile -Value $sb.ToString() -Encoding UTF8
+$reportText = $sb.ToString()
+if ($env:USERPROFILE) {
+    $userProfileEscaped = [regex]::Escape($env:USERPROFILE)
+    $userProfileJsonEscaped = [regex]::Escape($env:USERPROFILE.Replace('\', '\\'))
+    $reportText = [regex]::Replace($reportText, $userProfileJsonEscaped, '%USERPROFILE%', 'IgnoreCase')
+    $reportText = [regex]::Replace($reportText, $userProfileEscaped, '%USERPROFILE%', 'IgnoreCase')
+}
+$reportText = [regex]::Replace($reportText, '[A-Za-z]:\\(?:[^"\s\\]+\\)+([^"\s\\]+\.exe)', '$1', 'IgnoreCase')
+
+Set-Content -Path $OutFile -Value $reportText -Encoding UTF8
 Write-Host "Diagnostic report written to: $(Resolve-Path $OutFile)"
