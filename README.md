@@ -35,7 +35,10 @@ doc/
   02_development_guidelines.md
   03_backlog.md
   04_design_decisions.md
-troubleshoot.ps1  # Headless Windows WASAPI & PnP diagnostic bundle script
+scripts/
+  build-release.ps1  # Builds Portable (.exe) and NSIS installer targets into dist/
+  setup-dev.ps1      # Installs build-time prerequisites (tauri-cli)
+troubleshoot.ps1     # Headless Windows WASAPI & PnP diagnostic bundle script
 ```
 
 ## Building & Testing
@@ -50,3 +53,23 @@ To launch the mixer (automatically starts `audio-daemon.exe` if not already runn
 ```powershell
 .\target\debug\audio-ui.exe
 ```
+
+## Release Packaging (Portable & Installer)
+
+Building the NSIS Windows installer requires `tauri-cli` (`^2`). On a fresh machine, run:
+
+```powershell
+.\scripts\setup-dev.ps1
+```
+
+*(Or manually: `cargo install tauri-cli --version "^2" --locked`. Tauri's bundler automatically downloads a cached copy of NSIS on its first `cargo tauri build` run.)*
+
+Then build both distribution targets into `dist/`:
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+- `dist\AudioMixer-portable.exe`: Self-contained single executable (`--features portable`, self-spawns with `--daemon`).
+- `dist\Audio Mixer_0.1.0_x64-setup.exe`: NSIS installer bundling `audio-ui.exe` + `audio-daemon.exe` sidecar with pre-install/pre-uninstall process cleanup hooks.
+- Use `-PortableOnly` or `-InstallerOnly` to build a single target.
