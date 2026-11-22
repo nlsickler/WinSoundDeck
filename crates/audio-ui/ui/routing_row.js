@@ -140,6 +140,13 @@ async function toggleRouting(ctx, nextEnabled, onRefresh) {
         });
       }
     }
+  } else if (nextEnabled && isLoopback && session.muted) {
+    await invoke("set_session_mute", {
+      endpointId: session.endpoint_id,
+      pid: session.pid,
+      appKey,
+      muted: false,
+    });
   } else if (nextEnabled && !isLoopback) {
     const remembered =
       (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
@@ -383,7 +390,11 @@ export function updateRoutingRow(
   const isPrimary = endpoint.id === session.endpoint_id;
   const lb = activeLoopbacks.find((x) => x.target_endpoint_id === endpoint.id);
   const isLoopback = Boolean(lb);
-  const enabled = (isPrimary && !explicitlyUncheckedIds.has(appId)) || isLoopback;
+  const isVertical = row.classList.contains("device-fader-strip");
+  const primaryEnabled = isPrimary && !session.muted && !explicitlyUncheckedIds.has(appId);
+  const enabled = isVertical
+    ? !session.muted && (primaryEnabled || isLoopback)
+    : primaryEnabled || isLoopback;
 
   row._ctx = { session, endpoint, isPrimary, isLoopback, activeLoopbacks, enabled };
   row.classList.toggle("disabled", !enabled);

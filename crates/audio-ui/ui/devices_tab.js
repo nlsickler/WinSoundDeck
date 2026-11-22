@@ -259,6 +259,7 @@ export function renderDevicesTab(
       let routedCount = 0;
       for (const g of displayGroups) {
         const s = g.primary;
+        if (s.muted) continue;
         const activeLoopbacks = loopbacksForSession(loopbacks, s);
         const isPrimary = s.endpoint_id === ep.id && !isPrimaryUnchecked(appIdFor(s));
         const isLoopback = activeLoopbacks.some((lb) => lb.target_endpoint_id === ep.id);
