@@ -4,6 +4,13 @@
 
 WinSoundDeck gives you full control over where every application plays, how loud it is on each output device, and how your Windows audio defaults behave—without installing virtual audio cables, kernel drivers, or bloated peripheral suites.
 
+<table>
+  <tr>
+    <td align="center"><img src="doc/images/apps-tab.png" alt="WinSoundDeck Apps Tab" width="340" /><br/><sub><b>Apps View</b> — Per-app routing, pinning &amp; filters</sub></td>
+    <td align="center"><img src="doc/images/devices-tab.png" alt="WinSoundDeck Devices Tab" width="340" /><br/><sub><b>Devices View</b> — Vertical fader deck per output</sub></td>
+  </tr>
+</table>
+
 ---
 
 ## Why WinSoundDeck?
@@ -54,6 +61,7 @@ Looking at how WinSoundDeck stacks up against **SteelSeries GG Sonar** or **Logi
 
 ## Documentation & Contributing
 
+- [User Manual](doc/99_User_Manual.md)
 - [Development Guidelines & Building from Source](doc/02_development_guidelines.md)
 - [High-Level Architecture & Spec](doc/00_high_level_spec.md)
 - [Design Decisions](doc/04_design_decisions.md)
