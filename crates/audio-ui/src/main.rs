@@ -373,6 +373,13 @@ fn format_startup_command(exe_path: &Path) -> String {
 }
 
 #[tauri::command]
+fn open_devtools(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        win.open_devtools();
+    }
+}
+
+#[tauri::command]
 fn get_launch_at_login() -> Result<bool, String> {
     let output = Command::new("reg.exe")
         .args(["query", RUN_REG_KEY, "/v", RUN_REG_VALUE])
@@ -716,6 +723,7 @@ fn main() {
             set_include_disconnected,
             get_launch_at_login,
             set_launch_at_login,
+            open_devtools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -164,6 +164,10 @@ async function refreshAll(force = false) {
   }
 }
 
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+});
+
 setupTabs((tab) => {
   currentTab = tab;
   updateFilterUi();

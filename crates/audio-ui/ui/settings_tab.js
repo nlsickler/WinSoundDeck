@@ -1,6 +1,17 @@
 const { invoke } = window.__TAURI__.core;
 
 export async function setupAppSettingsTab() {
+  const inspectBtn = document.getElementById("inspect-btn");
+  if (inspectBtn) {
+    inspectBtn.onclick = async () => {
+      try {
+        await invoke("open_devtools");
+      } catch (err) {
+        console.error("open_devtools error:", err);
+      }
+    };
+  }
+
   const cb = document.getElementById("launch-at-login-cb");
   if (!cb) return;
 
