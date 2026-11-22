@@ -22,6 +22,60 @@ export function isUserInteracting() {
   );
 }
 
+let activeContextMenu = null;
+
+export function closeContextMenu() {
+  if (activeContextMenu) {
+    activeContextMenu.remove();
+    activeContextMenu = null;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (activeContextMenu && !activeContextMenu.contains(e.target)) {
+    closeContextMenu();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeContextMenu();
+});
+
+window.addEventListener("blur", closeContextMenu);
+
+export function openContextMenu(e, items) {
+  e.preventDefault();
+  e.stopPropagation();
+  closeContextMenu();
+  if (!items || items.length === 0) return;
+
+  const menu = document.createElement("div");
+  menu.className = "strip-context-menu";
+
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "strip-context-item";
+    btn.textContent = item.label;
+    btn.disabled = Boolean(item.disabled);
+    if (!item.disabled && item.onClick) {
+      btn.onclick = async () => {
+        closeContextMenu();
+        await item.onClick();
+      };
+    }
+    menu.append(btn);
+  }
+
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(e.clientX, Math.max(4, window.innerWidth - rect.width - 8));
+  const top = Math.min(e.clientY, Math.max(4, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  activeContextMenu = menu;
+}
+
 export function syncMuteIconButton(btn, muted, disabled = false, unmutedIcon = "🔊") {
   btn.classList.toggle("muted", Boolean(muted));
   btn.textContent = muted ? "🔇" : unmutedIcon;

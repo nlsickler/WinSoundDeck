@@ -213,15 +213,15 @@ function updateVisibilityCard(card, ep) {
 }
 
 export function renderVisibilityTab(endpoints, onRefresh) {
-  const byLastSeen = (a, b) => {
+  const byVisibilityConnectedAlpha = (a, b) => {
+    const allowedDiff = Number(Boolean(b.is_allowed)) - Number(Boolean(a.is_allowed));
+    if (allowedDiff !== 0) return allowedDiff;
     const connDiff = Number(Boolean(b.is_connected)) - Number(Boolean(a.is_connected));
     if (connDiff !== 0) return connDiff;
-    const seenDiff = (b.last_seen ?? 0) - (a.last_seen ?? 0);
-    if (seenDiff !== 0) return seenDiff;
     return a.friendly_name.localeCompare(b.friendly_name, undefined, { sensitivity: "base" });
   };
-  const outputs = endpoints.filter((e) => e.flow === "Render").sort(byLastSeen);
-  const inputs = endpoints.filter((e) => e.flow === "Capture").sort(byLastSeen);
+  const outputs = endpoints.filter((e) => e.flow === "Render").sort(byVisibilityConnectedAlpha);
+  const inputs = endpoints.filter((e) => e.flow === "Capture").sort(byVisibilityConnectedAlpha);
   syncKeyedList(
     document.getElementById("visibility-outputs-list"),
     outputs,

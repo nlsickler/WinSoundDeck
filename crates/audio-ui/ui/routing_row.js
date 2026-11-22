@@ -1,6 +1,7 @@
 import {
   createMeterSlider,
   isSliderDragging,
+  openContextMenu,
   pct,
   setSliderDragging,
 } from "./dom.js";
@@ -191,27 +192,6 @@ async function toggleRouting(ctx, nextEnabled, onRefresh) {
   await onRefresh(true);
 }
 
-let activeStripMenu = null;
-
-function closeStripMenu() {
-  if (activeStripMenu) {
-    activeStripMenu.remove();
-    activeStripMenu = null;
-  }
-}
-
-document.addEventListener("click", (e) => {
-  if (activeStripMenu && !activeStripMenu.contains(e.target)) {
-    closeStripMenu();
-  }
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeStripMenu();
-});
-
-window.addEventListener("blur", closeStripMenu);
-
 async function makePrimaryOutput(ctx, onRefresh) {
   if (!ctx || ctx.isPrimary) return;
   const { session, endpoint, isLoopback, activeLoopbacks } = ctx;
@@ -257,55 +237,37 @@ async function makePrimaryOutput(ctx, onRefresh) {
 }
 
 function openStripContextMenu(e, ctx, onRefresh, { includePin = true } = {}) {
-  e.preventDefault();
-  e.stopPropagation();
-  closeStripMenu();
-  if (!ctx) return;
+  if (!ctx) {
+    e.preventDefault();
+    return;
+  }
 
   const { session, isPrimary } = ctx;
-  const menu = document.createElement("div");
-  menu.className = "strip-context-menu";
-
+  const items = [];
   if (includePin) {
-    const pinItem = document.createElement("button");
-    pinItem.type = "button";
-    pinItem.className = "strip-context-item";
-    pinItem.textContent = session.is_pinned ? "📌 Unpin App" : "📌 Pin App";
-    pinItem.onclick = async () => {
-      closeStripMenu();
-      await invoke("set_app_pinned", {
-        pid: session.pid,
-        appKey: session.app_key || null,
-        pinned: !session.is_pinned,
-      });
-      await onRefresh(true);
-    };
-    menu.append(pinItem);
+    items.push({
+      label: session.is_pinned ? "📌 Unpin App" : "📌 Pin App",
+      onClick: async () => {
+        await invoke("set_app_pinned", {
+          pid: session.pid,
+          appKey: session.app_key || null,
+          pinned: !session.is_pinned,
+        });
+        await onRefresh(true);
+      },
+    });
   }
 
-  const primaryItem = document.createElement("button");
-  primaryItem.type = "button";
-  primaryItem.className = "strip-context-item";
   if (isPrimary) {
-    primaryItem.textContent = "✓ Primary Output";
-    primaryItem.disabled = true;
+    items.push({ label: "✓ Primary Output", disabled: true });
   } else {
-    primaryItem.textContent = "⭐ Set as Primary Output";
-    primaryItem.onclick = async () => {
-      closeStripMenu();
-      await makePrimaryOutput(ctx, onRefresh);
-    };
+    items.push({
+      label: "⭐ Set as Primary Output",
+      onClick: () => makePrimaryOutput(ctx, onRefresh),
+    });
   }
 
-  menu.append(primaryItem);
-  document.body.appendChild(menu);
-
-  const rect = menu.getBoundingClientRect();
-  const left = Math.min(e.clientX, Math.max(4, window.innerWidth - rect.width - 8));
-  const top = Math.min(e.clientY, Math.max(4, window.innerHeight - rect.height - 8));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
-  activeStripMenu = menu;
+  openContextMenu(e, items);
 }
 
 export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
