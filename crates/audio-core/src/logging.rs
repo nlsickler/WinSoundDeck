@@ -34,11 +34,11 @@ static LOGGER: OnceLock<Mutex<LoggerState>> = OnceLock::new();
 pub fn default_log_path() -> PathBuf {
     if let Ok(appdata) = std::env::var("APPDATA") {
         PathBuf::from(appdata)
-            .join("audio-mixer")
+            .join("winsounddeck")
             .join("logs")
-            .join("audio-mixer.log")
+            .join("winsounddeck.log")
     } else {
-        PathBuf::from("audio-mixer.log")
+        PathBuf::from("winsounddeck.log")
     }
 }
 

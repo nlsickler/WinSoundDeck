@@ -69,7 +69,7 @@ Modern Windows desktop environments lack a lightweight native solution for orche
 | Crate | Responsibility |
 | :--- | :--- |
 | **`audio-core`** | Narrow `unsafe` COM/WASAPI wrappers (`enumerator`, `endpoint`, `session`, `policy`, `loopback`, `events`, `preset`, `ipc`, `logging`). |
-| **`audio-daemon`** | Headless background service hosting `\\.\pipe\audio-mixer-daemon`, `watcher` (hot-plug & session events), `handlers/{mod,apps,presets}`, `status`, and `app_settings.json` persistence. |
+| **`audio-daemon`** | Headless background service hosting `\\.\pipe\winsounddeck-daemon`, `watcher` (hot-plug & session events), `handlers/{mod,apps,presets}`, `status`, and `app_settings.json` persistence. |
 | **`audio-ui`** | Tauri v2 desktop + system tray UI (`Applications`, `System`, `Device Visibility`), multi-monitor `window_state.json` persistence, and on-demand UAC `pnputil` device removal. |
 
 ### Primary Windows Interfaces
@@ -116,7 +116,7 @@ Modern Windows desktop environments lack a lightweight native solution for orche
 ## 4. Edge Cases & Resilience Strategy
 
 * **Ephemeral & Late Audio Sessions:** `IAudioSessionNotification` catches newly spawned streams (`OnSessionCreated`) and immediately applies both saved `app_settings` (`apply_to_pid`) and any active preset rules.
-* **Zero-Socket Named Pipe IPC:** Communication between `audio-ui` and `audio-daemon` uses line-delimited JSON over `\\.\pipe\audio-mixer-daemon`, avoiding TCP port conflicts and firewall prompts.
+* **Zero-Socket Named Pipe IPC:** Communication between `audio-ui` and `audio-daemon` uses line-delimited JSON over `\\.\pipe\winsounddeck-daemon`, avoiding TCP port conflicts and firewall prompts.
 * **Capture (Microphone) Support:** Capture endpoints support endpoint volume, mute, OS Default / Communications role assignment, peak meters, and **Device Visibility** filtering.
 
 ---

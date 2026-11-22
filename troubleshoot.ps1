@@ -1,10 +1,10 @@
-<#
+﻿<#
 .SYNOPSIS
-    Headless diagnostic bundle generator for Audio Mixer WASAPI/UI hang investigation.
+    Headless diagnostic bundle generator for WinSoundDeck WASAPI/UI hang investigation.
 .DESCRIPTION
     Collects OS/hardware info, PnP AudioEndpoint/MEDIA/SoftwareComponent inventory,
     direct WASAPI IMMDeviceEnumerator probes (masks 0xF and 0xB in both STA and MTA),
-    recent Application Hang / Audiosrv event logs, and Audio Mixer config/log files
+    recent Application Hang / Audiosrv event logs, and WinSoundDeck config/log files
     into a single timestamped Markdown report.
 #>
 [CmdletBinding()]
@@ -116,13 +116,14 @@ Add-Type -TypeDefinition $code
         $flag = if ($Apartment -eq 'STA') { '-STA' } else { '-MTA' }
         $output = & powershell.exe -NoProfile $flag -ExecutionPolicy Bypass -File $tmp -Mask $Mask 2>&1
         return ($output | Out-String).TrimEnd()
-    } finally {
+    }
+    finally {
         Remove-Item -Path $tmp -ErrorAction SilentlyContinue
     }
 }
 
 $sb = [System.Text.StringBuilder]::new()
-$null = $sb.AppendLine("# Audio Mixer Diagnostic Bundle")
+$null = $sb.AppendLine("# WinSoundDeck Diagnostic Bundle")
 $null = $sb.AppendLine("")
 $null = $sb.AppendLine("Generated: $(Get-Date -Format 'o')")
 $null = $sb.AppendLine("")
@@ -162,9 +163,9 @@ foreach ($apt in @('STA', 'MTA')) {
 $null = $sb.AppendLine("## 3. PnP Audio & Media Inventory")
 $null = $sb.AppendLine('```json')
 $pnp = Get-PnpDevice -Class AudioEndpoint, MEDIA, SoftwareComponent -ErrorAction SilentlyContinue |
-    Select-Object Class, Status, FriendlyName, Manufacturer, InstanceId |
-    Sort-Object Class, Status, FriendlyName |
-    ConvertTo-Json -Depth 3
+Select-Object Class, Status, FriendlyName, Manufacturer, InstanceId |
+Sort-Object Class, Status, FriendlyName |
+ConvertTo-Json -Depth 3
 $null = $sb.AppendLine($pnp)
 $null = $sb.AppendLine('```')
 $null = $sb.AppendLine("")
@@ -180,9 +181,9 @@ $hangs = Get-WinEvent -FilterHashtable @{
     ProviderName = 'Application Hang'
     StartTime    = $since
 } -ErrorAction SilentlyContinue |
-    Where-Object { $_.Message -match 'audio-ui|audio-daemon' -or $_.Id -eq 1002 } |
-    Select-Object -First 10 TimeCreated, Id, Message |
-    Format-List | Out-String
+Where-Object { $_.Message -match 'audio-ui|audio-daemon' -or $_.Id -eq 1002 } |
+Select-Object -First 10 TimeCreated, Id, Message |
+Format-List | Out-String
 $null = $sb.AppendLine($(if ($hangs.Trim()) { $hangs.TrimEnd() } else { "(none)" }))
 $null = $sb.AppendLine('```')
 $null = $sb.AppendLine("")
@@ -193,17 +194,17 @@ $audioEvents = Get-WinEvent -FilterHashtable @{
     LogName   = 'System'
     StartTime = $since
 } -ErrorAction SilentlyContinue |
-    Where-Object { $_.ProviderName -match 'Audio|Audiosrv|AudioEndpointBuilder' -and $_.Level -le 3 } |
-    Select-Object -First 15 TimeCreated, ProviderName, Id, LevelDisplayName, Message |
-    Format-List | Out-String
+Where-Object { $_.ProviderName -match 'Audio|Audiosrv|AudioEndpointBuilder' -and $_.Level -le 3 } |
+Select-Object -First 15 TimeCreated, ProviderName, Id, LevelDisplayName, Message |
+Format-List | Out-String
 $null = $sb.AppendLine($(if ($audioEvents.Trim()) { $audioEvents.TrimEnd() } else { "(none)" }))
 $null = $sb.AppendLine('```')
 $null = $sb.AppendLine("")
 
-# 5. Audio Mixer Config & Logs
-$null = $sb.AppendLine("## 5. Audio Mixer Config & Logs")
-$appDataDir = Join-Path $env:APPDATA "audio-mixer"
-$localAppDataDir = Join-Path $env:LOCALAPPDATA "audio-mixer"
+# 5. WinSoundDeck Config & Logs
+$null = $sb.AppendLine("## 5. WinSoundDeck Config & Logs")
+$appDataDir = Join-Path $env:APPDATA "winsounddeck"
+$localAppDataDir = Join-Path $env:LOCALAPPDATA "winsounddeck"
 $null = $sb.AppendLine("- APPDATA path: ``$appDataDir``")
 $null = $sb.AppendLine("- LOCALAPPDATA path: ``$localAppDataDir``")
 $null = $sb.AppendLine("")
@@ -215,14 +216,15 @@ foreach ($file in @("presets.json", "app_settings.json")) {
         $null = $sb.AppendLine('```json')
         $null = $sb.AppendLine((Get-Content -Path $p -Raw))
         $null = $sb.AppendLine('```')
-    } else {
+    }
+    else {
         $null = $sb.AppendLine("*(not present)*")
     }
     $null = $sb.AppendLine("")
 }
 
 $logFiles = Get-ChildItem -Path $appDataDir, $localAppDataDir, "." -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
-    Select-Object -First 5
+Select-Object -First 5
 foreach ($lf in $logFiles) {
     $null = $sb.AppendLine("### Log: $($lf.FullName) (last 100 lines)")
     $null = $sb.AppendLine('```text')

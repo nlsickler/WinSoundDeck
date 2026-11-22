@@ -437,7 +437,7 @@ struct WindowState {
 fn window_state_path() -> PathBuf {
     if let Ok(appdata) = std::env::var("APPDATA") {
         PathBuf::from(appdata)
-            .join("audio-mixer")
+            .join("winsounddeck")
             .join("window_state.json")
     } else {
         PathBuf::from("window_state.json")
@@ -772,7 +772,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir()
-            .join(format!("audio_mixer_win_{nanos}"))
+            .join(format!("winsounddeck_win_{nanos}"))
             .join("window_state.json");
         let st = WindowState {
             x: 2000,

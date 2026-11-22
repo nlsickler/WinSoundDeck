@@ -132,7 +132,7 @@ Click the **filter button** in the bottom-right corner to open contextual filter
 
 ## 9. Configuration Files & Troubleshooting
 
-WinSoundDeck stores your configuration locally in `%APPDATA%\audio-mixer\`:
+WinSoundDeck stores your configuration locally in `%APPDATA%\winsounddeck\`:
 - `presets.json` — Saved global presets.
 - `app_settings.json` — Pinned apps, device visibility allowlist, and known endpoint history.
 - `window_state.json` — Last window size and multi-monitor position.

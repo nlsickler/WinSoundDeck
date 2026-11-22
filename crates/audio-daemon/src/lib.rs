@@ -22,7 +22,7 @@ use watcher::spawn_event_watcher;
 
 fn default_config_path() -> PathBuf {
     if let Ok(appdata) = env::var("APPDATA") {
-        PathBuf::from(appdata).join("audio-mixer").join("presets.json")
+        PathBuf::from(appdata).join("winsounddeck").join("presets.json")
     } else {
         PathBuf::from("presets.json")
     }

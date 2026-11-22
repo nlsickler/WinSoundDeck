@@ -328,7 +328,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir()
-            .join(format!("audio_mixer_test_{name}_{nanos}"))
+            .join(format!("winsounddeck_test_{name}_{nanos}"))
             .join("app_settings.json")
     }
 

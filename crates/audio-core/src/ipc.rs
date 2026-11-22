@@ -17,7 +17,7 @@ use windows::Win32::System::Pipes::{
 
 use crate::{DataFlow, DeviceRole};
 
-pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\audio-mixer-daemon";
+pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\winsounddeck-daemon";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
