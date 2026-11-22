@@ -392,10 +392,6 @@ button:hover {
   border-color: var(--accent);
 }
 
-.btn-mute {
-  min-width: 56px;
-}
-
 .btn-icon-mute {
   min-width: 30px;
   padding: 3px 6px;
@@ -538,12 +534,6 @@ button:hover {
   min-width: 90px;
   max-width: 140px;
   cursor: pointer;
-}
-
-.btn-mute.muted {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: var(--danger);
-  color: #fca5a5;
 }
 
 .preset-btn.active {

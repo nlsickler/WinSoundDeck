@@ -1,4 +1,4 @@
-import { syncKeyedList } from "./dom.js";
+import { syncKeyedList, syncMuteIconButton } from "./dom.js";
 import {
   appDisplayName,
   appIdFor,
@@ -35,6 +35,8 @@ function buildDeviceCard(onRefresh) {
   meta.className = "card-meta";
   const appCountBadge = document.createElement("span");
   appCountBadge.className = "badge-muted";
+  const muteBtn = document.createElement("button");
+  muteBtn.className = "btn-icon-mute";
   const defaultBtn = document.createElement("button");
   defaultBtn.className = "btn-role btn-role-default";
   defaultBtn.textContent = "Default";
@@ -43,7 +45,7 @@ function buildDeviceCard(onRefresh) {
   commsBtn.className = "btn-role btn-role-comms";
   commsBtn.textContent = "Comms";
   commsBtn.title = "Set as OS Communications Default device";
-  meta.append(appCountBadge, defaultBtn, commsBtn);
+  meta.append(appCountBadge, muteBtn, defaultBtn, commsBtn);
 
   header.append(titleToggle, meta);
 
@@ -98,6 +100,17 @@ function buildDeviceCard(onRefresh) {
     const showInactive = expandedInactiveDeviceIds.has(ep.id);
     inactiveChevron.textContent = showInactive ? "▾" : "▸";
     inactiveList.classList.toggle("collapsed", !showInactive);
+  };
+
+  muteBtn.onclick = async () => {
+    const ep = card._ep;
+    if (!ep || ep.is_connected === false) return;
+    await invoke("set_endpoint_mute", {
+      flow: ep.flow,
+      endpointId: ep.id,
+      muted: !ep.muted,
+    });
+    await onRefresh(true);
   };
 
   defaultBtn.onclick = async () => {
@@ -195,6 +208,9 @@ export function renderDevicesTab(
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = disconnected ? `${ep.friendly_name} (Offline)` : ep.friendly_name;
       titleEl.title = ep.friendly_name;
+
+      const muteBtn = card.querySelector(".btn-icon-mute");
+      syncMuteIconButton(muteBtn, ep.muted, disconnected, "🔊");
 
       const defaultBtn = card.querySelector(".btn-role-default");
       defaultBtn.classList.toggle("active", Boolean(ep.is_default_multimedia));

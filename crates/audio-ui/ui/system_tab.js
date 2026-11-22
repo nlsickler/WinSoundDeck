@@ -4,6 +4,7 @@ import {
   pct,
   setSliderDragging,
   syncKeyedList,
+  syncMuteIconButton,
 } from "./dom.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -52,7 +53,7 @@ function buildEndpointCard(onRefresh) {
   const row = document.createElement("div");
   row.className = "controls-row";
   const muteBtn = document.createElement("button");
-  muteBtn.className = "btn-mute";
+  muteBtn.className = "btn-icon-mute";
   const { wrap: sliderWrap, slider, volFill, meterFill } = createMeterSlider();
   const label = document.createElement("span");
   label.className = "vol-label";
@@ -111,10 +112,8 @@ function updateEndpointCard(card, ep) {
   commsBtn.classList.toggle("active", Boolean(ep.is_default_communications));
   commsBtn.disabled = disconnected;
 
-  const muteBtn = card.querySelector(".btn-mute");
-  muteBtn.classList.toggle("muted", ep.muted);
-  muteBtn.textContent = ep.muted ? "Muted" : "Mute";
-  muteBtn.disabled = disconnected;
+  const muteBtn = card.querySelector(".btn-icon-mute");
+  syncMuteIconButton(muteBtn, ep.muted, disconnected, "🔊");
 
   const pctVal = pct(ep.volume);
   const slider = card.querySelector('input[type="range"]');

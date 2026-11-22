@@ -22,6 +22,13 @@ export function isUserInteracting() {
   );
 }
 
+export function syncMuteIconButton(btn, muted, disabled = false, unmutedIcon = "🔊") {
+  btn.classList.toggle("muted", Boolean(muted));
+  btn.textContent = muted ? "🔇" : unmutedIcon;
+  btn.title = muted ? "Unmute" : "Mute";
+  btn.disabled = Boolean(disabled);
+}
+
 export function createMeterSlider() {
   const wrap = document.createElement("div");
   wrap.className = "slider-meter-wrap";
