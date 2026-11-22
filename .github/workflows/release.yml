@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 env:
   CARGO_INCREMENTAL: 0
@@ -25,6 +27,12 @@ jobs:
       - name: Build portable and NSIS installer
         shell: pwsh
         run: .\scripts\build-release.ps1
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/WinSoundDeck-portable.exe
+            dist/*-setup.exe
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
