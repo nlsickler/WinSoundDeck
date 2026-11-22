@@ -53,7 +53,7 @@ function buildDeviceCard(onRefresh) {
   body.className = "routing-outputs";
 
   const activeList = document.createElement("div");
-  activeList.className = "routing-outputs-inner";
+  activeList.className = "device-fader-grid";
 
   const inactiveSection = document.createElement("div");
   inactiveSection.className = "device-inactive-section";
@@ -66,7 +66,7 @@ function buildDeviceCard(onRefresh) {
   inactiveToggle.append(inactiveChevron, inactiveLabel);
 
   const inactiveList = document.createElement("div");
-  inactiveList.className = "routing-outputs-inner collapsed";
+  inactiveList.className = "device-fader-grid collapsed";
 
   inactiveSection.append(inactiveToggle, inactiveList);
   body.append(activeList, inactiveSection);
@@ -155,7 +155,7 @@ function syncDeviceApps(
     groups,
     (g) => `devapp:${g.key}`,
     emptyText,
-    () => buildRoutingRow(onRefresh),
+    () => buildRoutingRow(onRefresh, { vertical: true }),
     (row, group) => {
       const s = group.primary;
       const activeLoopbacks = loopbacksForSession(loopbacks, s);
@@ -265,7 +265,7 @@ export function renderDevicesTab(
       const inactiveToggle = inactiveSection.querySelector(".device-inactive-toggle");
       inactiveToggle.querySelector(".chevron").textContent = showInactive ? "▾" : "▸";
       inactiveToggle.lastElementChild.textContent = `Idle & Offline (${inactiveGroups.length})`;
-      const inactiveList = inactiveSection.querySelector(".routing-outputs-inner");
+      const inactiveList = inactiveSection.querySelector(".device-fader-grid");
       inactiveList.classList.toggle("collapsed", !showInactive);
       syncDeviceApps(
         inactiveList,

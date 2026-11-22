@@ -51,19 +51,25 @@ export function clearPrimaryUnchecked(appId) {
   explicitlyUncheckedIds.delete(appId);
 }
 
-export function buildRoutingRow(onRefresh) {
+export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
   const row = document.createElement("div");
-  row.className = "routing-output-row";
+  row.className = vertical
+    ? "routing-output-row device-fader-strip"
+    : "routing-output-row";
 
   const cb = document.createElement("input");
   cb.type = "checkbox";
 
   const icon = document.createElement("img");
-  icon.className = "app-icon app-icon-sm collapsed";
+  icon.className = vertical
+    ? "app-icon app-icon-lg collapsed"
+    : "app-icon app-icon-sm collapsed";
   icon.alt = "";
 
   const name = document.createElement("span");
-  name.className = "routing-output-name";
+  name.className = vertical
+    ? "routing-output-name strip-name"
+    : "routing-output-name";
 
   const primaryTag = document.createElement("span");
   primaryTag.className = "badge-tag primary-slot";
@@ -73,9 +79,21 @@ export function buildRoutingRow(onRefresh) {
   const { wrap: sliderWrap, slider } = createMeterSlider();
 
   const label = document.createElement("span");
-  label.className = "vol-label";
+  label.className = vertical ? "vol-label strip-vol" : "vol-label";
 
-  row.append(cb, icon, name, primaryTag, sliderWrap, label);
+  if (vertical) {
+    const top = document.createElement("div");
+    top.className = "strip-top";
+    top.append(cb, primaryTag);
+
+    const stage = document.createElement("div");
+    stage.className = "device-fader-stage";
+    stage.append(sliderWrap);
+
+    row.append(top, icon, name, stage, label);
+  } else {
+    row.append(cb, icon, name, primaryTag, sliderWrap, label);
+  }
 
   cb.onchange = async () => {
     const ctx = row._ctx;
@@ -248,6 +266,7 @@ export function updateRoutingRow(
   const nameEl = row.querySelector(".routing-output-name");
   nameEl.textContent = labelText;
   nameEl.title = labelTitle || labelText;
+  row.title = labelTitle || labelText;
 
   const primaryTag = row.querySelector(".primary-slot");
   primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
