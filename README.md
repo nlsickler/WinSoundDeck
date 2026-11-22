@@ -73,3 +73,12 @@ Then build both distribution targets into `dist/`:
 - `dist\WinSoundDeck-portable.exe`: Self-contained single executable (`--features portable`, self-spawns with `--daemon`).
 - `dist\WinSoundDeck_0.1.0_x64-setup.exe`: NSIS installer bundling `audio-ui.exe` + `audio-daemon.exe` sidecar with pre-install/pre-uninstall process cleanup hooks.
 - Use `-PortableOnly` or `-InstallerOnly` to build a single target.
+
+## License
+
+Dual-licensed under either of:
+
+- **MIT License** ([LICENSE-MIT](LICENSE-MIT))
+- **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
+
+at your option.
