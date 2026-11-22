@@ -75,7 +75,7 @@ export function saveBoolPref(key, value) {
   savePref(key, Boolean(value));
 }
 
-export function setupTabs() {
+export function setupTabs(onTabChange) {
   const buttons = Array.from(document.querySelectorAll(".tab-btn"));
   const panels = Array.from(document.querySelectorAll(".tab-panel"));
 
@@ -89,6 +89,7 @@ export function setupTabs() {
     for (const p of panels) {
       p.classList.toggle("active", p.id === `tab-${valid}`);
     }
+    if (onTabChange) onTabChange(valid);
     return valid;
   };
 

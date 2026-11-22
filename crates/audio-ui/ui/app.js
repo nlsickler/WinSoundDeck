@@ -1,6 +1,14 @@
 import { isUserInteracting, setupTabs } from "./dom.js";
-import { renderAppsTab, setupAppsTabControls } from "./apps_tab.js";
-import { renderDevicesTab, setupDevicesTabControls } from "./devices_tab.js";
+import {
+  hasActiveAppsFilters,
+  renderAppsTab,
+  setupAppsTabControls,
+} from "./apps_tab.js";
+import {
+  hasActiveDevicesFilters,
+  renderDevicesTab,
+  setupDevicesTabControls,
+} from "./devices_tab.js";
 import { renderSystemTab } from "./system_tab.js";
 import { renderPresets, setupPresetsBar } from "./presets_bar.js";
 import { renderVisibilityTab, setupVisibilityControls } from "./visibility_tab.js";
@@ -9,8 +17,73 @@ import { setupAppSettingsTab } from "./settings_tab.js";
 const { invoke } = window.__TAURI__.core;
 
 let includeDisconnected = false;
+let currentTab = "apps";
 const appIconCache = new Map();
 const iconFetchInFlight = new Set();
+
+function updateFilterUi() {
+  const fabWrap = document.getElementById("filter-fab-wrap");
+  const popover = document.getElementById("filter-popover");
+  const fabBtn = document.getElementById("filter-fab-btn");
+  const dot = document.getElementById("filter-fab-dot");
+  if (!fabWrap || !popover || !fabBtn) return;
+
+  const showFab = currentTab === "apps" || currentTab === "devices" || currentTab === "system";
+  fabWrap.classList.toggle("collapsed", !showFab);
+  if (!showFab) {
+    popover.classList.add("collapsed");
+    fabBtn.setAttribute("aria-expanded", "false");
+  }
+
+  for (const el of popover.querySelectorAll("[data-filter-tabs]")) {
+    const tabs = el.dataset.filterTabs.split(" ");
+    el.classList.toggle("collapsed", !tabs.includes(currentTab));
+  }
+
+  const discCb = document.getElementById("filter-disconnected-cb");
+  if (discCb) discCb.checked = includeDisconnected;
+
+  let anyActive = includeDisconnected;
+  if (currentTab === "apps") anyActive = anyActive || hasActiveAppsFilters();
+  if (currentTab === "devices") anyActive = anyActive || hasActiveDevicesFilters();
+  if (dot) dot.classList.toggle("collapsed", !anyActive);
+  fabBtn.classList.toggle("has-active", anyActive);
+}
+
+function setupFilterMenu() {
+  const fabWrap = document.getElementById("filter-fab-wrap");
+  const fabBtn = document.getElementById("filter-fab-btn");
+  const popover = document.getElementById("filter-popover");
+  const discCb = document.getElementById("filter-disconnected-cb");
+
+  fabBtn.onclick = (e) => {
+    e.stopPropagation();
+    const opening = popover.classList.contains("collapsed");
+    popover.classList.toggle("collapsed", !opening);
+    fabBtn.setAttribute("aria-expanded", String(opening));
+  };
+
+  document.addEventListener("click", (e) => {
+    if (!fabWrap.contains(e.target) && !popover.classList.contains("collapsed")) {
+      popover.classList.add("collapsed");
+      fabBtn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !popover.classList.contains("collapsed")) {
+      popover.classList.add("collapsed");
+      fabBtn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  if (discCb) {
+    discCb.onchange = async () => {
+      await invoke("set_include_disconnected", { include: discCb.checked });
+      await refreshAll(true);
+    };
+  }
+}
 
 function ensureAppIcons(sessions) {
   const missing = [];
@@ -50,8 +123,7 @@ async function refreshAll(force = false) {
     badge.className = "badge badge-ok collapsed";
 
     includeDisconnected = Boolean(status.include_disconnected);
-    const discBtn = document.getElementById("disconnected-btn");
-    discBtn.classList.toggle("active", includeDisconnected);
+    updateFilterUi();
 
     const appSessions = status.sessions.filter((s) => s.pid !== 0 || Boolean(s.app_key));
     const visibleIO = status.endpoints.filter(
@@ -92,16 +164,16 @@ async function refreshAll(force = false) {
   }
 }
 
-setupTabs();
-setupAppsTabControls(refreshAll);
-setupDevicesTabControls(refreshAll);
+setupTabs((tab) => {
+  currentTab = tab;
+  updateFilterUi();
+});
+setupFilterMenu();
+setupAppsTabControls(refreshAll, updateFilterUi);
+setupDevicesTabControls(refreshAll, updateFilterUi);
 setupPresetsBar(refreshAll);
 setupVisibilityControls();
 setupAppSettingsTab();
-document.getElementById("disconnected-btn").onclick = async () => {
-  await invoke("set_include_disconnected", { include: !includeDisconnected });
-  await refreshAll(true);
-};
 document.getElementById("refresh-btn").onclick = () => refreshAll(true);
 function scalePeak(v) {
   if (!v || v <= 0.001) return 0;

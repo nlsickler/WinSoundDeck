@@ -1,4 +1,4 @@
-import { syncKeyedList } from "./dom.js";
+import { loadBoolPref, saveBoolPref, syncKeyedList } from "./dom.js";
 import {
   appDisplayName,
   appIdFor,
@@ -8,28 +8,46 @@ import {
   isPrimaryUnchecked,
   loopbacksForSession,
   sortEndpointsByRoleAndName,
+  stateBadgeFor,
   updateRoutingRow,
 } from "./routing_row.js";
 
 const { invoke } = window.__TAURI__.core;
 
+const PREF_APPS_IDLE = "winsounddeck.apps.show_idle";
+const PREF_APPS_OFFLINE = "winsounddeck.apps.show_offline";
+
 const collapsedActiveIds = new Set();
 const expandedInactiveIds = new Set();
 const expandedSubPidGroups = new Set();
-let showIdleApps = false;
-let showOfflineApps = false;
+let showIdleApps = loadBoolPref(PREF_APPS_IDLE, false);
+let showOfflineApps = loadBoolPref(PREF_APPS_OFFLINE, false);
 
-export function setupAppsTabControls(onRefresh) {
-  document.getElementById("apps-idle-toggle").onclick = () => {
-    showIdleApps = !showIdleApps;
-    document.getElementById("apps-idle-chevron").textContent = showIdleApps ? "▾" : "▸";
-    document.getElementById("apps-idle-list").classList.toggle("collapsed", !showIdleApps);
-  };
-  document.getElementById("apps-offline-toggle").onclick = () => {
-    showOfflineApps = !showOfflineApps;
-    document.getElementById("apps-offline-chevron").textContent = showOfflineApps ? "▾" : "▸";
-    document.getElementById("apps-offline-list").classList.toggle("collapsed", !showOfflineApps);
-  };
+export function hasActiveAppsFilters() {
+  return showIdleApps || showOfflineApps;
+}
+
+export function setupAppsTabControls(onRefresh, onFilterChange) {
+  const idleCb = document.getElementById("filter-apps-idle-cb");
+  const offlineCb = document.getElementById("filter-apps-offline-cb");
+  if (idleCb) {
+    idleCb.checked = showIdleApps;
+    idleCb.onchange = () => {
+      showIdleApps = idleCb.checked;
+      saveBoolPref(PREF_APPS_IDLE, showIdleApps);
+      if (onFilterChange) onFilterChange();
+      if (onRefresh) onRefresh(true);
+    };
+  }
+  if (offlineCb) {
+    offlineCb.checked = showOfflineApps;
+    offlineCb.onchange = () => {
+      showOfflineApps = offlineCb.checked;
+      saveBoolPref(PREF_APPS_OFFLINE, showOfflineApps);
+      if (onFilterChange) onFilterChange();
+      if (onRefresh) onRefresh(true);
+    };
+  }
   const clearBtn = document.getElementById("apps-clear-unpinned-btn");
   if (clearBtn) {
     clearBtn.onclick = async (e) => {
@@ -69,11 +87,13 @@ function buildAppCard(onRefresh) {
 
   const meta = document.createElement("div");
   meta.className = "card-meta";
+  const stateBadge = document.createElement("span");
+  stateBadge.className = "badge-tag strip-state-badge collapsed";
   const outCountBadge = document.createElement("span");
   outCountBadge.className = "badge-muted";
   const pidBadge = document.createElement("span");
   pidBadge.className = "badge-tag";
-  meta.append(outCountBadge, pidBadge);
+  meta.append(stateBadge, outCountBadge, pidBadge);
 
   header.append(titleToggle, pinBtn, muteBtn, meta);
 
@@ -273,6 +293,20 @@ function renderAppsList(
       titleEl.textContent = name;
       titleEl.title = name;
 
+      const stateBadgeEl = card.querySelector(".strip-state-badge");
+      const badge = stateBadgeFor(s);
+      if (stateBadgeEl) {
+        if (badge) {
+          stateBadgeEl.textContent = badge.text;
+          stateBadgeEl.title = badge.title;
+          stateBadgeEl.className = `badge-tag strip-state-badge strip-state-${badge.variant}`;
+        } else {
+          stateBadgeEl.textContent = "";
+          stateBadgeEl.title = "";
+          stateBadgeEl.className = "badge-tag strip-state-badge collapsed";
+        }
+      }
+
       const pidBadge = card.querySelector(".app-header-row > .card-meta > .badge-tag");
       const multiPid = group.sessions.length > 1;
       const showSubs = multiPid && expandedSubPidGroups.has(group.key);
@@ -383,34 +417,20 @@ export function renderAppsTab(
   const idle = sessions.filter((s) => !s.is_active && s.pid > 0).sort(byName);
   const offline = sessions.filter((s) => !s.is_active && s.pid === 0).sort(byPinnedThenName);
 
+  const idleCountEl = document.getElementById("filter-apps-idle-count");
+  if (idleCountEl) idleCountEl.textContent = String(idle.length);
+  const offlineCountEl = document.getElementById("filter-apps-offline-count");
+  if (offlineCountEl) offlineCountEl.textContent = String(offline.length);
+
+  const visibleSessions = [
+    ...playing,
+    ...(showIdleApps ? idle : []),
+    ...(showOfflineApps ? offline : []),
+  ];
+
   renderAppsList(
     document.getElementById("apps-active-list"),
-    playing,
-    renderEndpoints,
-    loopbacks,
-    includeDisconnected,
-    appIconCache,
-    onRefresh
-  );
-
-  document.getElementById("apps-idle-count").textContent = String(idle.length);
-  document.getElementById("apps-idle-group").style.display = idle.length > 0 ? "" : "none";
-  renderAppsList(
-    document.getElementById("apps-idle-list"),
-    idle,
-    renderEndpoints,
-    loopbacks,
-    includeDisconnected,
-    appIconCache,
-    onRefresh
-  );
-
-  document.getElementById("apps-offline-count").textContent = String(offline.length);
-  document.getElementById("apps-offline-group").style.display =
-    offline.length > 0 ? "" : "none";
-  renderAppsList(
-    document.getElementById("apps-offline-list"),
-    offline,
+    visibleSessions,
     renderEndpoints,
     loopbacks,
     includeDisconnected,

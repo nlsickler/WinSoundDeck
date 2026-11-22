@@ -18,6 +18,22 @@ export function appDisplayName(s) {
   return s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
 }
 
+export function stateBadgeFor(s) {
+  if (s.is_active) return null;
+  if (s.pid > 0) {
+    return {
+      text: "Idle",
+      variant: "idle",
+      title: "Idle (running, not currently playing audio)",
+    };
+  }
+  return {
+    text: "Offline",
+    variant: "offline",
+    title: "Offline (not currently running)",
+  };
+}
+
 export function groupSessionsByApp(sessions) {
   const groups = [];
   const byKey = new Map();

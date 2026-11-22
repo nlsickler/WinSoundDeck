@@ -12,6 +12,7 @@ import {
   isPrimaryUnchecked,
   loopbacksForSession,
   sortEndpointsByRoleAndName,
+  stateBadgeFor,
   updateRoutingRow,
 } from "./routing_row.js";
 
@@ -24,14 +25,19 @@ const collapsedDeviceIds = new Set();
 let showIdleInDevices = loadBoolPref(PREF_SHOW_IDLE, false);
 let showOfflineInDevices = loadBoolPref(PREF_SHOW_OFFLINE, false);
 
-export function setupDevicesTabControls(onRefresh) {
-  const idleCb = document.getElementById("devices-show-idle-cb");
-  const offlineCb = document.getElementById("devices-show-offline-cb");
+export function hasActiveDevicesFilters() {
+  return showIdleInDevices || showOfflineInDevices;
+}
+
+export function setupDevicesTabControls(onRefresh, onFilterChange) {
+  const idleCb = document.getElementById("filter-devices-idle-cb");
+  const offlineCb = document.getElementById("filter-devices-offline-cb");
   if (idleCb) {
     idleCb.checked = showIdleInDevices;
     idleCb.onchange = () => {
       showIdleInDevices = idleCb.checked;
       saveBoolPref(PREF_SHOW_IDLE, showIdleInDevices);
+      if (onFilterChange) onFilterChange();
       if (onRefresh) onRefresh(true);
     };
   }
@@ -40,6 +46,7 @@ export function setupDevicesTabControls(onRefresh) {
     offlineCb.onchange = () => {
       showOfflineInDevices = offlineCb.checked;
       saveBoolPref(PREF_SHOW_OFFLINE, showOfflineInDevices);
+      if (onFilterChange) onFilterChange();
       if (onRefresh) onRefresh(true);
     };
   }
@@ -144,22 +151,6 @@ function buildDeviceCard(onRefresh) {
   return card;
 }
 
-function stateBadgeFor(s) {
-  if (s.is_active) return null;
-  if (s.pid > 0) {
-    return {
-      text: "Idle",
-      variant: "idle",
-      title: "Idle (running, not currently playing audio)",
-    };
-  }
-  return {
-    text: "Offline",
-    variant: "offline",
-    title: "Offline (not currently running)",
-  };
-}
-
 function syncDeviceApps(container, groups, ep, loopbacks, appIconCache, onRefresh) {
   syncKeyedList(
     container,
@@ -222,9 +213,9 @@ export function renderDevicesTab(
     .filter((g) => !g.primary.is_active && g.primary.pid === 0)
     .sort(byPinnedThenName);
 
-  const idleCountEl = document.getElementById("devices-idle-count");
+  const idleCountEl = document.getElementById("filter-devices-idle-count");
   if (idleCountEl) idleCountEl.textContent = String(idleGroups.length);
-  const offlineCountEl = document.getElementById("devices-offline-count");
+  const offlineCountEl = document.getElementById("filter-devices-offline-count");
   if (offlineCountEl) offlineCountEl.textContent = String(offlineGroups.length);
 
   // Left-to-right order: Active -> Idle -> Offline
