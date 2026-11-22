@@ -256,7 +256,7 @@ async function makePrimaryOutput(ctx, onRefresh) {
   await onRefresh(true);
 }
 
-function openStripContextMenu(e, ctx, onRefresh) {
+function openStripContextMenu(e, ctx, onRefresh, { includePin = true } = {}) {
   e.preventDefault();
   e.stopPropagation();
   closeStripMenu();
@@ -266,19 +266,22 @@ function openStripContextMenu(e, ctx, onRefresh) {
   const menu = document.createElement("div");
   menu.className = "strip-context-menu";
 
-  const pinItem = document.createElement("button");
-  pinItem.type = "button";
-  pinItem.className = "strip-context-item";
-  pinItem.textContent = session.is_pinned ? "📌 Unpin App" : "📌 Pin App";
-  pinItem.onclick = async () => {
-    closeStripMenu();
-    await invoke("set_app_pinned", {
-      pid: session.pid,
-      appKey: session.app_key || null,
-      pinned: !session.is_pinned,
-    });
-    await onRefresh(true);
-  };
+  if (includePin) {
+    const pinItem = document.createElement("button");
+    pinItem.type = "button";
+    pinItem.className = "strip-context-item";
+    pinItem.textContent = session.is_pinned ? "📌 Unpin App" : "📌 Pin App";
+    pinItem.onclick = async () => {
+      closeStripMenu();
+      await invoke("set_app_pinned", {
+        pid: session.pid,
+        appKey: session.app_key || null,
+        pinned: !session.is_pinned,
+      });
+      await onRefresh(true);
+    };
+    menu.append(pinItem);
+  }
 
   const primaryItem = document.createElement("button");
   primaryItem.type = "button";
@@ -294,7 +297,7 @@ function openStripContextMenu(e, ctx, onRefresh) {
     };
   }
 
-  menu.append(pinItem, primaryItem);
+  menu.append(primaryItem);
   document.body.appendChild(menu);
 
   const rect = menu.getBoundingClientRect();
@@ -353,6 +356,9 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
     primaryTag.className = "badge-tag primary-slot";
     primaryTag.textContent = "P";
     primaryTag.title = "Primary Output";
+
+    row.oncontextmenu = (e) =>
+      openStripContextMenu(e, row._ctx, onRefresh, { includePin: false });
 
     row.append(cb, icon, name, primaryTag, sliderWrap, label);
   }
