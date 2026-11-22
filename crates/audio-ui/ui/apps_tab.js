@@ -68,6 +68,7 @@ function buildAppCard(onRefresh) {
   const titleToggle = document.createElement("div");
   titleToggle.className = "app-title-toggle";
   titleToggle.style.flex = "1";
+  titleToggle.style.minWidth = "0";
   titleToggle.style.maxWidth = "none";
   const chevron = document.createElement("span");
   chevron.className = "chevron";
@@ -76,7 +77,9 @@ function buildAppCard(onRefresh) {
   icon.alt = "";
   const title = document.createElement("span");
   title.className = "card-title";
-  titleToggle.append(chevron, icon, title);
+  const stateBadge = document.createElement("span");
+  stateBadge.className = "badge-tag strip-state-badge collapsed";
+  titleToggle.append(chevron, icon, title, stateBadge);
 
   const pinBtn = document.createElement("button");
   pinBtn.className = "btn-pin";
@@ -87,15 +90,13 @@ function buildAppCard(onRefresh) {
 
   const meta = document.createElement("div");
   meta.className = "card-meta";
-  const stateBadge = document.createElement("span");
-  stateBadge.className = "badge-tag strip-state-badge collapsed";
   const outCountBadge = document.createElement("span");
   outCountBadge.className = "badge-muted";
   const pidBadge = document.createElement("span");
   pidBadge.className = "badge-tag pid-badge";
-  meta.append(stateBadge, outCountBadge, pidBadge);
+  meta.append(outCountBadge, pidBadge);
 
-  header.append(titleToggle, pinBtn, muteBtn, meta);
+  header.append(titleToggle, meta, pinBtn, muteBtn);
 
   const body = document.createElement("div");
   body.className = "routing-outputs";

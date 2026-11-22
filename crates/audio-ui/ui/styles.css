@@ -983,6 +983,7 @@ button:hover {
   line-height: 1.1;
   padding: 1px 5px;
   border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .strip-state-badge.collapsed {
