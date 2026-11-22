@@ -78,7 +78,7 @@ Then build both distribution targets into `dist/`:
 
 Dual-licensed under either of:
 
-- **MIT License** ([LICENSE-MIT](LICENSE-MIT))
+- **MIT License** ([LICENSE](LICENSE))
 - **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
 
 at your option.
