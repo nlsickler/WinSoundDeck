@@ -429,7 +429,7 @@ fn build_tray_menu_with_presets(
     app: &AppHandle,
     preset_data: Option<(Option<String>, Vec<PresetSummary>)>,
 ) -> tauri::Result<Menu<tauri::Wry>> {
-    let open_item = MenuItem::with_id(app, "open", "Open Mixer", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, "open", "Open WinSoundDeck", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![Box::new(open_item)];
@@ -509,7 +509,7 @@ fn main() {
 
             let mut tray_builder = TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
-                .tooltip("Audio Mixer");
+                .tooltip("WinSoundDeck");
             if let Some(icon) = app.default_window_icon().cloned() {
                 tray_builder = tray_builder.icon(icon);
             }

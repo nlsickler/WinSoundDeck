@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability for Audio Mixer main window","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default capability for WinSoundDeck main window","local":true,"windows":["main"],"permissions":["core:default"]}}

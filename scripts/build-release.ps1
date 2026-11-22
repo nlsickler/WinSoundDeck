@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds Audio Mixer Portable (.exe) and NSIS Installer targets into .\dist\.
+    Builds WinSoundDeck Portable (.exe) and NSIS Installer targets into .\dist\.
 #>
 [CmdletBinding()]
 param(
@@ -17,8 +17,8 @@ try {
     if (-not $InstallerOnly) {
         Write-Host "==> Building Portable executable (release, --features portable)..."
         cargo build --release -p audio-ui --features portable --offline
-        Copy-Item "target\release\audio-ui.exe" "dist\AudioMixer-portable.exe" -Force
-        Write-Host "Portable executable: $(Resolve-Path 'dist\AudioMixer-portable.exe')"
+        Copy-Item "target\release\audio-ui.exe" "dist\WinSoundDeck-portable.exe" -Force
+        Write-Host "Portable executable: $(Resolve-Path 'dist\WinSoundDeck-portable.exe')"
     }
 
     if (-not $PortableOnly) {

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Audio Mixer main window",
+  "description": "Default capability for WinSoundDeck main window",
   "windows": ["main"],
   "permissions": [
     "core:default"

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Installs build-time developer prerequisites for Audio Mixer packaging.
+    Installs build-time developer prerequisites for WinSoundDeck packaging.
 .DESCRIPTION
     Verifies Rust toolchain availability and installs tauri-cli (^2) if missing,
     which is required to build the NSIS Windows installer via scripts\build-release.ps1.

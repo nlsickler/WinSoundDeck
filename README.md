@@ -1,10 +1,10 @@
-# Audio Mixer
+# WinSoundDeck
 
 A lightweight, native Windows audio mixer, per-application router, and preset manager built in Rust on top of Windows Core Audio (WASAPI / COM) and Tauri.
 
 ## Purpose
 
-Windows lacks a fast, native way to combine per-application volume control, multi-output routing, OS default device switching, and hardware-resilient presets without installing virtual audio cable drivers or heavy commercial mixer suites. **Audio Mixer** runs entirely in user mode against Windows Core Audio APIs to provide deterministic audio routing with a minimal footprint.
+Windows lacks a fast, native way to combine per-application volume control, multi-output routing, OS default device switching, and hardware-resilient presets without installing virtual audio cable drivers or heavy commercial mixer suites. **WinSoundDeck** runs entirely in user mode against Windows Core Audio APIs to provide deterministic audio routing with a minimal footprint.
 
 ## Goals
 
@@ -70,6 +70,6 @@ Then build both distribution targets into `dist/`:
 .\scripts\build-release.ps1
 ```
 
-- `dist\AudioMixer-portable.exe`: Self-contained single executable (`--features portable`, self-spawns with `--daemon`).
-- `dist\Audio Mixer_0.1.0_x64-setup.exe`: NSIS installer bundling `audio-ui.exe` + `audio-daemon.exe` sidecar with pre-install/pre-uninstall process cleanup hooks.
+- `dist\WinSoundDeck-portable.exe`: Self-contained single executable (`--features portable`, self-spawns with `--daemon`).
+- `dist\WinSoundDeck_0.1.0_x64-setup.exe`: NSIS installer bundling `audio-ui.exe` + `audio-daemon.exe` sidecar with pre-install/pre-uninstall process cleanup hooks.
 - Use `-PortableOnly` or `-InstallerOnly` to build a single target.
