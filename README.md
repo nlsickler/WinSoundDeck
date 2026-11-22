@@ -15,11 +15,15 @@ WinSoundDeck gives you full control over where every application plays, how loud
 
 ## Why WinSoundDeck?
 
+WinSoundDeck was inspired by a combination of **EarTrumpet**, **SteelSeries Sonar**, and **Logitech MIXLINE**. Ater using and trying to use each of this applications in my local setup, I found that none really met my requirements and needs.  While there are parts of these applications that WinSoundDeck does not attempt to solve (that I'll miss), the streamlined UI, flexible presets, tiny footprint, and routing flexibility (without virtual audio cables) are features that I appreaciate - and hope others will too.
+
+### Detials
+
 - **Zero Virtual Drivers:** Works directly with Windows Core Audio in user mode. No virtual sound cards cluttering your Windows Sound settings, no forced surround downmixing, and no audio drop-outs from driver crashes.
 - **Two Views for Any Workflow:** Manage routing **per-application** in the **Apps** tab, or switch to the **Devices** tab for a compact vertical-fader sound deck organized by output device.
 - **Play to Multiple Devices at Once:** Send an app to your headphones *and* mirror it to desktop speakers or a TV simultaneously—each with its own independent volume slider. *(Note: primary routing is persisted by Windows, while multi-output mirroring requires WinSoundDeck to stay running in the system tray.)*
 - **Dock & Headset Resilient:** Automatically recovers your routes and active preset when you plug or unplug a USB-C dock, monitor, or Bluetooth headset.
-- **Tiny Footprint:** Built in native Rust + Tauri with zero telemetry, no account required, and an optional system-tray **Launch at Windows login** toggle.
+- **Tiny Footprint:** Built in native Rust + Tauri with zero telemetry, no account required, and an optional **Launch at Windows login** toggle.
 
 ---
 
@@ -66,6 +70,14 @@ Looking at how WinSoundDeck stacks up against **EarTrumpet**, **SteelSeries GG S
 - [High-Level Architecture & Spec](doc/00_high_level_spec.md)
 - [Design Decisions](doc/04_design_decisions.md)
 - [Creating a Release](doc/05_create_release.md)
+
+---
+
+## AI Disclaimer
+
+This entire application was written primarily by AI (Gemini 4 Hydrogen).  While I don't know Rust, I defined the architecture, requirements and performed all testing and some extensive dogfooding as part my daily home and work workflows.
+
+I've found it useful, maybe you will too.
 
 ---
 
