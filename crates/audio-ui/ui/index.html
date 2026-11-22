@@ -41,11 +41,14 @@
     <button class="tab-btn active" data-tab="apps" role="tab" aria-selected="true" title="Applications">
       Apps <span id="count-apps" class="tab-count">0</span>
     </button>
+    <button class="tab-btn" data-tab="devices" role="tab" aria-selected="false" title="Devices">
+      Devices <span id="count-devices" class="tab-count">0</span>
+    </button>
     <button class="tab-btn" data-tab="system" role="tab" aria-selected="false" title="System">
       Sys <span id="count-system" class="tab-count">0</span>
     </button>
-    <button class="tab-btn tab-btn-right" data-tab="visibility" role="tab" aria-selected="false" title="Device Visibility">
-      Device Vis.
+    <button class="tab-btn tab-btn-right" data-tab="visibility" role="tab" aria-selected="false" title="I/O Visibility">
+      I/O Vis.
     </button>
     <button class="tab-btn tab-btn-icon" data-tab="settings" role="tab" aria-selected="false" title="App Settings">
       ⚙️
@@ -77,6 +80,10 @@
         </div>
         <div id="apps-offline-list" class="card-list collapsed"></div>
       </div>
+    </section>
+
+    <section class="tab-panel" id="tab-devices" role="tabpanel">
+      <div id="devices-list" class="card-list"></div>
     </section>
 
     <section class="tab-panel" id="tab-system" role="tabpanel">

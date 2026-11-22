@@ -1,5 +1,6 @@
 import { isUserInteracting, setupTabs } from "./dom.js";
 import { renderAppsTab, setupAppsTabControls } from "./apps_tab.js";
+import { renderDevicesTab } from "./devices_tab.js";
 import { renderSystemTab } from "./system_tab.js";
 import { renderPresets, setupPresetsBar } from "./presets_bar.js";
 import { renderVisibilityTab, setupVisibilityControls } from "./visibility_tab.js";
@@ -28,6 +29,8 @@ async function refreshAll(force = false) {
       (e) => e.is_allowed && (includeDisconnected || e.is_connected)
     );
 
+    const visibleRender = visibleIO.filter((e) => e.flow === "Render");
+
     renderPresets(presetData, refreshAll);
     renderAppsTab(
       appSessions,
@@ -36,10 +39,18 @@ async function refreshAll(force = false) {
       includeDisconnected,
       refreshAll
     );
+    renderDevicesTab(
+      status.endpoints,
+      appSessions,
+      status.loopbacks || [],
+      includeDisconnected,
+      refreshAll
+    );
     renderSystemTab(status.endpoints, includeDisconnected, refreshAll);
     renderVisibilityTab(status.endpoints, refreshAll);
 
     document.getElementById("count-apps").textContent = String(appSessions.length);
+    document.getElementById("count-devices").textContent = String(visibleRender.length);
     document.getElementById("count-system").textContent = String(visibleIO.length);
   } catch (err) {
     badge.textContent = "⚠️";

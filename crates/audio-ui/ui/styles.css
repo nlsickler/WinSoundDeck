@@ -847,3 +847,34 @@ button:hover {
   font-style: italic;
   font-size: 12px;
 }
+
+.routing-outputs-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.routing-outputs-inner.collapsed {
+  display: none;
+}
+
+.device-inactive-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.device-inactive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 4px;
+}
+
+.device-inactive-toggle:hover {
+  color: var(--text);
+}
