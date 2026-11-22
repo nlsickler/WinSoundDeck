@@ -6,6 +6,7 @@ import {
   groupSessionsByApp,
   isPrimaryUnchecked,
   loopbacksForSession,
+  sortEndpointsByRoleAndName,
   updateRoutingRow,
 } from "./routing_row.js";
 
@@ -187,8 +188,10 @@ export function renderDevicesTab(
   appIconCache,
   onRefresh
 ) {
-  const renderEndpoints = endpoints.filter(
-    (e) => e.flow === "Render" && e.is_allowed && (includeDisconnected || e.is_connected)
+  const renderEndpoints = sortEndpointsByRoleAndName(
+    endpoints.filter(
+      (e) => e.flow === "Render" && e.is_allowed && (includeDisconnected || e.is_connected)
+    )
   );
 
   const byName = (a, b) =>

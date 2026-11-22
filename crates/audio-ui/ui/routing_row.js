@@ -37,6 +37,24 @@ export function groupSessionsByApp(sessions) {
   return groups;
 }
 
+export function endpointRoleRank(ep) {
+  if (ep.is_default_multimedia) return 0;
+  if (ep.is_default_communications) return 1;
+  return 2;
+}
+
+export function sortEndpointsByRoleAndName(endpoints) {
+  return [...endpoints].sort((a, b) => {
+    const rankDiff = endpointRoleRank(a) - endpointRoleRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    const nameDiff = (a.friendly_name || "").localeCompare(b.friendly_name || "", undefined, {
+      sensitivity: "base",
+    });
+    if (nameDiff !== 0) return nameDiff;
+    return (a.id || "").localeCompare(b.id || "");
+  });
+}
+
 export function loopbacksForSession(loopbacks, s) {
   return loopbacks.filter((lb) =>
     s.pid > 0 ? lb.pid === s.pid : s.app_key && lb.app_key === s.app_key

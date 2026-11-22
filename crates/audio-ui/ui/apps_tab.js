@@ -7,6 +7,7 @@ import {
   groupSessionsByApp,
   isPrimaryUnchecked,
   loopbacksForSession,
+  sortEndpointsByRoleAndName,
   updateRoutingRow,
 } from "./routing_row.js";
 
@@ -368,7 +369,9 @@ export function renderAppsTab(
   appIconCache,
   onRefresh
 ) {
-  const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
+  const renderEndpoints = sortEndpointsByRoleAndName(
+    endpoints.filter((e) => e.flow === "Render")
+  );
   const byName = (a, b) =>
     appDisplayName(a).localeCompare(appDisplayName(b), undefined, { sensitivity: "base" });
   const byPinnedThenName = (a, b) => {
