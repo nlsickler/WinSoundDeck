@@ -216,7 +216,7 @@ foreach ($file in @("presets.json", "app_settings.json")) {
         $content = Get-Content -Path $p -Raw
         if ($file -eq "app_settings.json") {
             # Redact full Windows executable paths down to just the executable filename
-            $content = [regex]::Replace($content, '[A-Za-z]:\\\\(?:[^"\\r\\n]+\\\\)+([^"\\\\\\r\\n]+\.exe)', '$1', 'IgnoreCase')
+            $content = [regex]::Replace($content, '"[A-Za-z]:\\\\[^"]*\\\\([^"\\\\]+\.exe)"', '"$1"', 'IgnoreCase')
         }
         $null = $sb.AppendLine('```json')
         $null = $sb.AppendLine($content)

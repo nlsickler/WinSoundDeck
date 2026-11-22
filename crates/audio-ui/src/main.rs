@@ -396,16 +396,13 @@ fn percent_encode_query(input: &str) -> String {
     out
 }
 
-fn build_github_issue_url(version: &str, report_path: &Path) -> String {
+fn build_github_issue_url(version: &str) -> String {
     let title = format!("[Bug v{version}]: ");
-    let path_str = report_path.to_string_lossy();
-    let body = format!(
-        "### Describe the issue\n<!-- What happened, and what did you expect? -->\n\n### Steps to reproduce\n1. \n\n### Diagnostic Report\nPlease attach the generated diagnostic file (path copied to your clipboard):\n`{path_str}`\n\n*(Click \"Paste, drop, or click to add files\" below and paste the file path into the file picker.)*\n"
-    );
+    let body = "### Describe the issue\n<!-- What happened, and what did you expect? -->\n\n### Steps to reproduce\n1. \n\n### Diagnostic Report\nPlease attach the generated diagnostic `.md` file (its path has been copied to your clipboard — click **\"Paste, drop, or click to add files\"** below and paste it into the file picker).\n";
     format!(
         "{GITHUB_ISSUES_NEW_URL}?title={}&body={}",
         percent_encode_query(&title),
-        percent_encode_query(&body)
+        percent_encode_query(body)
     )
 }
 
@@ -464,7 +461,7 @@ async fn run_troubleshoot_to_clipboard(open_github_issue: bool) -> Result<String
         }
 
         if open_github_issue {
-            let url = build_github_issue_url(env!("CARGO_PKG_VERSION"), &report_path);
+            let url = build_github_issue_url(env!("CARGO_PKG_VERSION"));
             let ps_url = url.replace('\'', "''");
             Command::new("powershell.exe")
                 .args(["-NoProfile", "-Command", &format!("Start-Process '{ps_url}'")])
@@ -846,12 +843,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn github_issue_url_includes_version_and_report_path() {
-        let url = build_github_issue_url("0.9.0", Path::new(r"C:\Temp\winsounddeck-diagnostics.md"));
+    fn github_issue_url_includes_version_without_local_paths() {
+        let url = build_github_issue_url("0.9.0");
         assert!(url.starts_with("https://github.com/nlsickler/WinSoundDeck/issues/new?title="));
         assert!(url.contains("0.9.0"));
         assert!(url.contains("body="));
-        assert!(url.contains("winsounddeck-diagnostics.md"));
+        assert!(!url.contains("AppData"));
     }
 
     #[test]
