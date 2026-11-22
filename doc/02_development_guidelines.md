@@ -24,3 +24,61 @@ This document defines the coding standards and architectural rules for the **Aud
 * **Apply & Undo:** Experimental steps should record initial state, apply the change, verify via readback, and restore the original state before exiting.
 * **Conflict Avoidance:** Confirm SteelSeries Sonar (or other external audio mixers) is shut down before running live hardware tests.
 * **Sandbox Boundary:** Enumeration works in the restricted terminal sandbox, but `IMMDevice::Activate` (`IAudioSessionManager2`, `IAudioEndpointVolume`) requires unsandboxed host execution (`0x80070005` otherwise).
+
+---
+
+## 5. Workspace Structure, Building & Packaging
+
+### Workspace Layout
+
+```text
+crates/
+  audio-core/     # Shared Windows Core Audio (COM/WASAPI) wrappers, loopback tee, icon extraction, presets, IPC
+  audio-daemon/   # Background service, named-pipe server, hot-plug watcher, app settings store
+  audio-ui/       # Tauri v2 desktop & system tray application (HTML/CSS/JS frontend)
+doc/
+  00_high_level_spec.md
+  01_available_alternatives.md
+  02_development_guidelines.md
+  03_backlog.md
+  04_design_decisions.md
+  05_create_release.md
+scripts/
+  build-release.ps1  # Builds Portable (.exe) and NSIS installer targets into dist/
+  bump-version.ps1   # Bumps workspace + Tauri version, commits, and tags vX.Y.Z
+  setup-dev.ps1      # Installs build-time prerequisites (tauri-cli)
+troubleshoot.ps1     # Headless Windows WASAPI & PnP diagnostic bundle script
+```
+
+### Building & Testing
+
+```powershell
+cargo build --workspace --offline
+cargo test --workspace --offline
+```
+
+To launch the UI (automatically starts `audio-daemon.exe` if not already running):
+
+```powershell
+.\target\debug\audio-ui.exe
+```
+
+### Release Packaging (Portable & Installer)
+
+Building the NSIS Windows installer requires `tauri-cli` (`^2`). On a fresh machine, run:
+
+```powershell
+.\scripts\setup-dev.ps1
+```
+
+*(Or manually: `cargo install tauri-cli --version "^2" --locked`. Tauri's bundler automatically downloads a cached copy of NSIS on its first `cargo tauri build` run.)*
+
+Then build both distribution targets into `dist\`:
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+- `dist\WinSoundDeck-portable.exe`: Self-contained single executable (`--features portable`, self-spawns with `--daemon`).
+- `dist\WinSoundDeck_<version>_x64-setup.exe`: NSIS installer bundling `audio-ui.exe` + `audio-daemon.exe` sidecar with pre-install/pre-uninstall process cleanup hooks.
+- Use `-PortableOnly` or `-InstallerOnly` to build a single target. For tagging and publishing releases, see [doc/05_create_release.md](05_create_release.md).
