@@ -2,6 +2,7 @@ mod com;
 mod endpoint;
 mod enumerator;
 mod events;
+mod instance;
 pub mod ipc;
 pub mod logging;
 mod loopback;
@@ -15,6 +16,7 @@ pub use com::ComGuard;
 pub use endpoint::{AudioEndpoint, EndpointVolumeState};
 pub use enumerator::{AudioEnumerator, DataFlow};
 pub use events::{AudioEvent, DeviceNotificationGuard, SessionNotificationGuard};
+pub use instance::SingleInstanceGuard;
 pub use loopback::{LoopbackHandle, LoopbackTee};
 pub use policy::{AppPolicyClient, DeviceRole, PolicyClient};
 pub use preset::{

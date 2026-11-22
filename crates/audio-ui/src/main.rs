@@ -11,7 +11,7 @@ use audio_core::ipc::{
     install_ctrl_c_daemon_shutdown, send_ipc_request, DaemonStatus, IpcRequest, IpcResponse,
     PeakLevels, PresetSummary, DEFAULT_PIPE_NAME,
 };
-use audio_core::{DataFlow, DeviceRole};
+use audio_core::{DataFlow, DeviceRole, SingleInstanceGuard};
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -320,6 +320,60 @@ fn set_include_disconnected(include: bool) -> Result<(), String> {
     Ok(())
 }
 
+const RUN_REG_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+const RUN_REG_VALUE: &str = "WinSoundDeck";
+
+fn format_startup_command(exe_path: &Path) -> String {
+    format!("\"{}\"", exe_path.display())
+}
+
+#[tauri::command]
+fn get_launch_at_login() -> Result<bool, String> {
+    let output = Command::new("reg.exe")
+        .args(["query", RUN_REG_KEY, "/v", RUN_REG_VALUE])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("Failed to query Windows startup registry: {e}"))?;
+    Ok(output.status.success())
+}
+
+#[tauri::command]
+fn set_launch_at_login(enabled: bool) -> Result<bool, String> {
+    if enabled {
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to resolve current executable: {e}"))?;
+        let cmd = format_startup_command(&exe);
+        let status = Command::new("reg.exe")
+            .args([
+                "add",
+                RUN_REG_KEY,
+                "/v",
+                RUN_REG_VALUE,
+                "/t",
+                "REG_SZ",
+                "/d",
+                &cmd,
+                "/f",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("Failed to update Windows startup registry: {e}"))?;
+        if !status.success() {
+            return Err("Failed to enable Launch at Windows login".to_string());
+        }
+    } else {
+        let status = Command::new("reg.exe")
+            .args(["delete", RUN_REG_KEY, "/v", RUN_REG_VALUE, "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("Failed to update Windows startup registry: {e}"))?;
+        if !status.success() && get_launch_at_login().unwrap_or(false) {
+            return Err("Failed to disable Launch at Windows login".to_string());
+        }
+    }
+    Ok(enabled)
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 struct WindowState {
     x: i32,
@@ -491,7 +545,18 @@ fn main() {
     }
 
     audio_core::logging::init_logging("audio-ui");
-    audio_core::log_info!("Starting audio-ui");
+    let _instance = match SingleInstanceGuard::acquire("Local\\WinSoundDeckUI") {
+        Ok(Some(guard)) => guard,
+        Ok(None) => {
+            audio_core::log_info!("WinSoundDeck UI is already running; exiting");
+            return;
+        }
+        Err(err) => {
+            audio_core::log_error!("Failed to acquire UI single-instance mutex: {err}");
+            return;
+        }
+    };
+    audio_core::log_info!("Starting WinSoundDeck UI");
     install_ctrl_c_daemon_shutdown();
 
     let last_window_state = std::sync::Arc::new(Mutex::new(None::<WindowState>));
@@ -602,6 +667,8 @@ fn main() {
             open_bluetooth_settings,
             set_default_endpoint,
             set_include_disconnected,
+            get_launch_at_login,
+            set_launch_at_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -610,8 +677,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        daemon_launch_command, is_position_visible_on_monitors, load_window_state,
-        pnp_instance_id_for_endpoint, save_window_state, WindowState,
+        daemon_launch_command, format_startup_command, is_position_visible_on_monitors,
+        load_window_state, pnp_instance_id_for_endpoint, save_window_state, WindowState,
     };
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -667,5 +734,14 @@ mod tests {
 
         let laptop_only = vec![(0, 0, 1920, 1080)];
         assert!(!is_position_visible_on_monitors(&st, &laptop_only));
+    }
+
+    #[test]
+    fn format_startup_command_quotes_executable_path() {
+        let exe = Path::new("C:\\Program Files\\WinSoundDeck\\WinSoundDeck.exe");
+        assert_eq!(
+            format_startup_command(exe),
+            "\"C:\\Program Files\\WinSoundDeck\\WinSoundDeck.exe\""
+        );
     }
 }

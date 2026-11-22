@@ -3,6 +3,7 @@ import { renderAppsTab, setupAppsTabControls } from "./apps_tab.js";
 import { renderSystemTab } from "./system_tab.js";
 import { renderPresets, setupPresetsBar } from "./presets_bar.js";
 import { renderVisibilityTab, setupVisibilityControls } from "./visibility_tab.js";
+import { setupAppSettingsTab } from "./settings_tab.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -52,6 +53,7 @@ setupTabs();
 setupAppsTabControls(refreshAll);
 setupPresetsBar(refreshAll);
 setupVisibilityControls();
+setupAppSettingsTab();
 document.getElementById("disconnected-btn").onclick = async () => {
   await invoke("set_include_disconnected", { include: !includeDisconnected });
   await refreshAll(true);

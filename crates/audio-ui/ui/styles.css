@@ -227,6 +227,10 @@ body {
   margin-left: auto;
 }
 
+.tab-btn-icon {
+  padding: 6px 10px 8px;
+}
+
 .tab-btn:hover {
   color: var(--text);
 }
@@ -767,6 +771,35 @@ button:hover {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-desc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.settings-row input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .primary-slot {

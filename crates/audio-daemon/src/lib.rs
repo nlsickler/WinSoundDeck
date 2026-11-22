@@ -14,7 +14,7 @@ use app_settings::AppSettingsStore;
 use audio_core::ipc::{serve_named_pipe, DEFAULT_PIPE_NAME};
 use audio_core::{
     log_error, log_info, AudioEnumerator, ComGuard, DataFlow, DeviceRole, PresetConfig,
-    PresetEngine,
+    PresetEngine, SingleInstanceGuard,
 };
 use handlers::handle_request;
 use state::DaemonState;
@@ -65,6 +65,17 @@ fn load_or_default_config(path: &PathBuf) -> PresetConfig {
 
 pub fn run_daemon() {
     audio_core::logging::init_logging("audio-daemon");
+    let _instance = match SingleInstanceGuard::acquire("Local\\WinSoundDeckDaemon") {
+        Ok(Some(guard)) => guard,
+        Ok(None) => {
+            log_info!("audio-daemon is already running; exiting");
+            return;
+        }
+        Err(err) => {
+            log_error!("Failed to acquire daemon single-instance mutex: {err}");
+            return;
+        }
+    };
     let (config_path, pipe_name) = parse_args();
     log_info!("Starting audio-daemon on pipe '{pipe_name}'");
 

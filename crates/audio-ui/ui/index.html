@@ -47,6 +47,9 @@
     <button class="tab-btn tab-btn-right" data-tab="visibility" role="tab" aria-selected="false">
       Device Visibility
     </button>
+    <button class="tab-btn tab-btn-icon" data-tab="settings" role="tab" aria-selected="false" title="App Settings">
+      ⚙️
+    </button>
   </nav>
 
   <main class="container">
@@ -97,6 +100,21 @@
       </div>
       <div id="visibility-outputs-list" class="card-list"></div>
       <div id="visibility-inputs-list" class="card-list collapsed"></div>
+    </section>
+
+    <section class="tab-panel" id="tab-settings" role="tabpanel">
+      <div class="io-group">
+        <h2>App Settings</h2>
+        <div class="card-list">
+          <label class="settings-row">
+            <div class="settings-row-text">
+              <span class="card-title">Launch at Windows login</span>
+              <span class="settings-desc">Start WinSoundDeck automatically when you sign in to Windows.</span>
+            </div>
+            <input id="launch-at-login-cb" type="checkbox" />
+          </label>
+        </div>
+      </div>
     </section>
   </main>
 
