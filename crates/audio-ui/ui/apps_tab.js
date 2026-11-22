@@ -92,7 +92,7 @@ function buildAppCard(onRefresh) {
   const outCountBadge = document.createElement("span");
   outCountBadge.className = "badge-muted";
   const pidBadge = document.createElement("span");
-  pidBadge.className = "badge-tag";
+  pidBadge.className = "badge-tag pid-badge";
   meta.append(stateBadge, outCountBadge, pidBadge);
 
   header.append(titleToggle, pinBtn, muteBtn, meta);
@@ -307,7 +307,7 @@ function renderAppsList(
         }
       }
 
-      const pidBadge = card.querySelector(".app-header-row > .card-meta > .badge-tag");
+      const pidBadge = card.querySelector(".pid-badge");
       const multiPid = group.sessions.length > 1;
       const showSubs = multiPid && expandedSubPidGroups.has(group.key);
       pidBadge.classList.toggle("badge-tag-btn", multiPid);
