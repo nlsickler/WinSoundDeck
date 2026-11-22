@@ -3,9 +3,6 @@
 Remaining enhancements after the 10-step Steel Thread validation and initial UI/routing polish pass.
 
 ## Packaging & Polish
-- **Dual Distribution Targets (Portable + Installer):**
-  - **Portable (`--features portable`):** Expose `audio-daemon`'s entrypoint as a library call behind a Cargo feature flag so `audio-ui.exe` can self-spawn with `--daemon` as a single self-contained `.exe`.
-  - **Installer (`cargo tauri build`):** Add `tauri.installer.conf.json` with `"bundle": { "active": true, "targets": ["nsis"] }`, `audio-daemon.exe` sidecar (`externalBin`), and NSIS upgrade/uninstall process cleanup hooks.
 - **Product Naming & Branding:**
   - Pick an official product name (replacing `Audio Mixer` / `audio-mixer`) and update app identifier, tray tooltip, window title, and multi-resolution icon assets.
 - **Windows Startup / Tray Lifecycle:**

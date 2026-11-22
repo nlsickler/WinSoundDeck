@@ -32,6 +32,23 @@ fn ipc_call(req: IpcRequest) -> Result<IpcResponse, String> {
     }
 }
 
+fn daemon_launch_command(current_exe: Option<&Path>) -> (PathBuf, &'static [&'static str]) {
+    #[cfg(feature = "portable")]
+    {
+        let exe = current_exe
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("audio-ui.exe"));
+        (exe, &["--daemon"])
+    }
+    #[cfg(not(feature = "portable"))]
+    {
+        let daemon_path = current_exe
+            .and_then(|p| p.parent().map(|dir| dir.join("audio-daemon.exe")))
+            .unwrap_or_else(|| PathBuf::from("audio-daemon.exe"));
+        (daemon_path, &[])
+    }
+}
+
 fn ensure_daemon_running() {
     if matches!(
         send_ipc_request(DEFAULT_PIPE_NAME, &IpcRequest::Ping),
@@ -40,12 +57,11 @@ fn ensure_daemon_running() {
         return;
     }
 
-    let daemon_path = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|dir| dir.join("audio-daemon.exe")))
-        .unwrap_or_else(|| "audio-daemon.exe".into());
+    let current_exe = std::env::current_exe().ok();
+    let (daemon_path, args) = daemon_launch_command(current_exe.as_deref());
 
     if Command::new(daemon_path)
+        .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .is_ok()
@@ -468,6 +484,12 @@ fn refresh_tray_menu(app: &AppHandle) {
 }
 
 fn main() {
+    #[cfg(feature = "portable")]
+    if std::env::args().any(|a| a == "--daemon") {
+        audio_daemon::run_daemon();
+        return;
+    }
+
     audio_core::logging::init_logging("audio-ui");
     audio_core::log_info!("Starting audio-ui");
     install_ctrl_c_daemon_shutdown();
@@ -588,10 +610,27 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_position_visible_on_monitors, load_window_state, pnp_instance_id_for_endpoint,
-        save_window_state, WindowState,
+        daemon_launch_command, is_position_visible_on_monitors, load_window_state,
+        pnp_instance_id_for_endpoint, save_window_state, WindowState,
     };
+    use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn daemon_launch_command_matches_build_mode() {
+        let exe = Path::new("C:\\Apps\\audio-ui.exe");
+        let (path, args) = daemon_launch_command(Some(exe));
+        #[cfg(feature = "portable")]
+        {
+            assert_eq!(path, exe);
+            assert_eq!(args, &["--daemon"]);
+        }
+        #[cfg(not(feature = "portable"))]
+        {
+            assert_eq!(path, Path::new("C:\\Apps\\audio-daemon.exe"));
+            assert!(args.is_empty());
+        }
+    }
 
     #[test]
     fn pnp_instance_id_formats_valid_endpoint_and_rejects_injection() {

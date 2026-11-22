@@ -6,6 +6,7 @@
 # Tauri / Node (future UI)
 node_modules/
 dist/
+crates/audio-ui/binaries/
 
 # OS / Editor
 .DS_Store
