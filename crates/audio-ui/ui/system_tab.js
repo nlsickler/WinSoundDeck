@@ -1,7 +1,7 @@
 import {
   createMeterSlider,
   isSliderDragging,
-  openContextMenu,
+  openEndpointContextMenu,
   pct,
   setSliderDragging,
   syncKeyedList,
@@ -88,22 +88,7 @@ function buildEndpointCard(onRefresh) {
     });
   };
 
-  card.oncontextmenu = (e) => {
-    const ep = card._item;
-    if (!ep) return;
-    openContextMenu(e, [
-      {
-        label: "👁️ Hide",
-        onClick: async () => {
-          await invoke("set_endpoint_allowed", {
-            endpointId: ep.id,
-            allowed: false,
-          });
-          await onRefresh(true);
-        },
-      },
-    ]);
-  };
+  card.oncontextmenu = (e) => openEndpointContextMenu(e, card._item, invoke, onRefresh);
 
   return card;
 }

@@ -312,7 +312,7 @@ fn forget_endpoint(endpoint_id: String) -> Result<(), String> {
     Ok(())
 }
 
-fn pnp_instance_id_for_endpoint(endpoint_id: &str) -> Result<String, String> {
+fn validate_endpoint_id(endpoint_id: &str) -> Result<(), String> {
     let valid = !endpoint_id.is_empty()
         && endpoint_id
             .chars()
@@ -320,7 +320,17 @@ fn pnp_instance_id_for_endpoint(endpoint_id: &str) -> Result<String, String> {
     if !valid {
         return Err(format!("Invalid endpoint ID: '{endpoint_id}'"));
     }
+    Ok(())
+}
+
+fn pnp_instance_id_for_endpoint(endpoint_id: &str) -> Result<String, String> {
+    validate_endpoint_id(endpoint_id)?;
     Ok(format!("SWD\\MMDEVAPI\\{endpoint_id}"))
+}
+
+fn sound_properties_uri_for_endpoint(endpoint_id: &str) -> Result<String, String> {
+    validate_endpoint_id(endpoint_id)?;
+    Ok(format!("ms-settings:sound-properties?endpointId={endpoint_id}"))
 }
 
 #[tauri::command]
@@ -350,6 +360,17 @@ fn open_bluetooth_settings() -> Result<(), String> {
         .arg("ms-settings:bluetooth")
         .spawn()
         .map_err(|e| format!("Failed to open Bluetooth settings: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_sound_properties(endpoint_id: String) -> Result<(), String> {
+    let uri = sound_properties_uri_for_endpoint(&endpoint_id)?;
+    Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", &format!("Start-Process '{uri}'")])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("Failed to open Windows Sound Properties: {e}"))?;
     Ok(())
 }
 
@@ -821,6 +842,7 @@ fn main() {
             forget_endpoint,
             remove_windows_endpoint,
             open_bluetooth_settings,
+            open_sound_properties,
             set_default_endpoint,
             set_include_disconnected,
             get_launch_at_login,
@@ -837,7 +859,8 @@ mod tests {
     use super::{
         build_github_issue_url, daemon_launch_command, format_startup_command,
         is_position_visible_on_monitors, load_window_state, percent_encode_query,
-        pnp_instance_id_for_endpoint, save_window_state, WindowState,
+        pnp_instance_id_for_endpoint, save_window_state, sound_properties_uri_for_endpoint,
+        WindowState,
     };
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -885,6 +908,11 @@ mod tests {
         );
         assert!(pnp_instance_id_for_endpoint("").is_err());
         assert!(pnp_instance_id_for_endpoint("foo'; calc.exe").is_err());
+        assert_eq!(
+            sound_properties_uri_for_endpoint(valid).unwrap(),
+            format!("ms-settings:sound-properties?endpointId={valid}")
+        );
+        assert!(sound_properties_uri_for_endpoint("foo&bar").is_err());
     }
 
     #[test]

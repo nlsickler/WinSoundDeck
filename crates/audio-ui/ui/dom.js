@@ -76,6 +76,26 @@ export function openContextMenu(e, items) {
   activeContextMenu = menu;
 }
 
+export function openEndpointContextMenu(e, ep, invoke, onRefresh) {
+  if (!ep) return;
+  openContextMenu(e, [
+    {
+      label: "⚙️ Windows Sound Properties",
+      onClick: () => invoke("open_sound_properties", { endpointId: ep.id }),
+    },
+    {
+      label: "👁️ Hide",
+      onClick: async () => {
+        await invoke("set_endpoint_allowed", {
+          endpointId: ep.id,
+          allowed: false,
+        });
+        await onRefresh(true);
+      },
+    },
+  ]);
+}
+
 export function syncMuteIconButton(btn, muted, disabled = false, unmutedIcon = "🔊") {
   btn.classList.toggle("muted", Boolean(muted));
   btn.textContent = muted ? "🔇" : unmutedIcon;

@@ -1,5 +1,6 @@
 import {
   loadBoolPref,
+  openEndpointContextMenu,
   saveBoolPref,
   syncKeyedList,
   syncMuteIconButton,
@@ -147,6 +148,8 @@ function buildDeviceCard(onRefresh) {
       await onRefresh(true);
     }
   };
+
+  header.oncontextmenu = (e) => openEndpointContextMenu(e, card._ep, invoke, onRefresh);
 
   return card;
 }
