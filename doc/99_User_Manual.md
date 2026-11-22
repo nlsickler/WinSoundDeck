@@ -82,7 +82,7 @@ The **Sys** tab gives you direct hardware control over all enabled **Outputs** a
   <img src="images/sys-tab.png" alt="WinSoundDeck Sys Tab" width="400" />
 </p>
 
-- **Mute (`🔊` / `🔇`) & Master Slider:** Controls hardware endpoint volume and mute state with live in-track peak meters.
+- **Mute (`🔊` / `🔇`) & Volume Slider:** Controls hardware endpoint volume and mute state with live in-track peak meters.
 - **Default / Comms:** Assigns Windows Default and Communications Default for both playback devices and microphones.
 - **Right-Click `👁️ Hide`:** Right-click any device card in **Sys** and choose **👁️ Hide** to remove it from **Apps**, **Devices**, and **Sys** (you can re-enable it anytime in **I/O Vis.**).
 

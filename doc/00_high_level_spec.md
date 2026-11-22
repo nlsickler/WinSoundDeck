@@ -76,7 +76,7 @@ Modern Windows desktop environments lack a lightweight native solution for orche
 
 * `IMMDeviceEnumerator`: Enumerates render/capture endpoints using state mask `0xB` (`DEVICE_STATE_ACTIVE | DEVICE_STATE_DISABLED | DEVICE_STATE_UNPLUGGED`), skipping orphaned `DEVICE_STATE_NOTPRESENT` (`0x4`) registry entries and guarding against `0xE000020B` / `ERROR_NOT_FOUND`.
 * `IAudioSessionManager2` & `ISimpleAudioVolume`: Enumerates and controls per-process audio streams.
-* `IAudioEndpointVolume`: Controls hardware endpoint master volume and mute states (skipped for disconnected endpoints).
+* `IAudioEndpointVolume`: Controls hardware endpoint volume and mute states (skipped for disconnected endpoints).
 * `IAudioMeterInformation`: Reads real-time `0.0..=1.0` peak levels for endpoints and active sessions via lightweight `GetPeaks` IPC polling (`75ms` when visible).
 * `IPolicyConfig` & `IAudioPolicyConfigFactory`: Sets OS default endpoints (`Multimedia`, `Console`, `Communications`) and per-app primary output routes.
 * `ActivateAudioInterfaceAsync` (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`): Implements `LoopbackTee` to mirror an application's audio to secondary output endpoints with independent volume scaling.
@@ -107,7 +107,7 @@ Modern Windows desktop environments lack a lightweight native solution for orche
 * **Non-Blocking STA Startup:** `audio-ui` initializes the tray icon immediately on Tauri's STA thread and spawns `audio-daemon` / populates tray preset items off-thread to prevent UI hangs.
 * **Three-Tab Layout:**
   * **Applications:** Split into **Playing**, **Idle** (live silent WASAPI PIDs), and **Offline** (not running, sorted Pinned-first then A–Z) shelves, with multi-PID grouping (`N PIDs ▸`) and per-output routing sliders.
-  * **System:** Allowed outputs and inputs with **Default** / **Comms** OS role toggles, master volume/mute, and unified in-track peak meters.
+  * **System:** Allowed outputs and inputs with **Default** / **Comms** OS role toggles, device volume/mute, and unified in-track peak meters.
   * **Device Visibility:** Sorted by **Connected → Last Seen → Name** with `👁️` visibility toggles and expandable cleanup controls.
 * **Window Persistence:** Saves `window_state.json` (`x`, `y`, `width`, `height`) validated against `available_monitors()` so multi-monitor placements (e.g., PowerToys FancyZones) restore reliably and fall back safely when a monitor is unplugged.
 
@@ -117,7 +117,7 @@ Modern Windows desktop environments lack a lightweight native solution for orche
 
 * **Ephemeral & Late Audio Sessions:** `IAudioSessionNotification` catches newly spawned streams (`OnSessionCreated`) and immediately applies both saved `app_settings` (`apply_to_pid`) and any active preset rules.
 * **Zero-Socket Named Pipe IPC:** Communication between `audio-ui` and `audio-daemon` uses line-delimited JSON over `\\.\pipe\audio-mixer-daemon`, avoiding TCP port conflicts and firewall prompts.
-* **Capture (Microphone) Support:** Capture endpoints support master volume, mute, OS Default / Communications role assignment, peak meters, and **Device Visibility** filtering.
+* **Capture (Microphone) Support:** Capture endpoints support endpoint volume, mute, OS Default / Communications role assignment, peak meters, and **Device Visibility** filtering.
 
 ---
 

@@ -36,7 +36,7 @@ WinSoundDeck gives you full control over where every application plays, how loud
 - Clearing an active preset cleanly restores your pre-preset hardware volumes and Windows defaults.
 
 ### 🔌 Clean Device Management (`Sys` & `I/O Vis.`)
-- **System (`Sys`) Tab:** Adjust master volume/mute, live peak meters, and Windows **Default** / **Comms** roles for outputs and microphones. Right-click any device to **Hide** it.
+- **System (`Sys`) Tab:** Adjust device volume/mute, live peak meters, and Windows **Default** / **Comms** roles for outputs and microphones. Right-click any device to **Hide** it.
 - **I/O Visibility (`I/O Vis.`):** Hide unused HDMI monitors or virtual outputs from your mixer, view offline device history, jump to Windows Bluetooth settings, or clean up stale offline entries.
 
 ---
