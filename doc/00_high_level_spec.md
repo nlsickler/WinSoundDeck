@@ -1,4 +1,4 @@
-# Audio Mixer — High-Level Architecture & Specification
+# WinSoundDeck — High-Level Architecture & Specification
 
 ---
 
@@ -89,7 +89,7 @@ Modern Windows desktop environments lack a lightweight native solution for orche
 
 * **Reactive Hot-Plug Debouncing:** `IMMNotificationClient` events (`DeviceStateChanged`, `DeviceAdded`) are coalesced through a `300ms` `Debouncer` in `watcher.rs` so USB-C dock or headset bursts trigger a single session-watcher re-arm and preset re-apply once settled.
 * **Device Visibility Allowlist & Offline Cache:** `app_settings.json` stores `allowed_endpoints` and `known_endpoints` (`{ friendly_name, flow, is_bluetooth, last_seen }`), keeping previously seen docks/displays available for preset setup even when `NOTPRESENT`, without polling orphaned WASAPI entries.
-* **Bluetooth & Ghost Cleanup:** `PKEY_Device_EnumeratorName` identifies paired Bluetooth stacks (`BTHENUM`, `BTHHFENUM`, `BTHLE*`) to link directly to `ms-settings:bluetooth`, while non-Bluetooth offline ghosts can be forgotten from Audio Mixer or uninstalled via elevated `pnputil /remove-device`.
+* **Bluetooth & Ghost Cleanup:** `PKEY_Device_EnumeratorName` identifies paired Bluetooth stacks (`BTHENUM`, `BTHHFENUM`, `BTHLE*`) to link directly to `ms-settings:bluetooth`, while non-Bluetooth offline ghosts can be forgotten from WinSoundDeck or uninstalled via elevated `pnputil /remove-device`.
 
 ### Session Manager & Application Pinning
 

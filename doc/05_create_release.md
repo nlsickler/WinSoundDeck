@@ -1,6 +1,6 @@
 # Creating a Release
 
-**Audio Mixer** follows **Semantic Versioning (`MAJOR.MINOR.PATCH`)** with a single workspace version in [Cargo.toml](../Cargo.toml) (`[workspace.package]`) and [tauri.conf.json](../crates/audio-ui/tauri.conf.json), kept in sync by [scripts/bump-version.ps1](../scripts/bump-version.ps1).
+**WinSoundDeck** follows **Semantic Versioning (`MAJOR.MINOR.PATCH`)** with a single workspace version in [Cargo.toml](../Cargo.toml) (`[workspace.package]`) and [tauri.conf.json](../crates/audio-ui/tauri.conf.json), kept in sync by [scripts/bump-version.ps1](../scripts/bump-version.ps1).
 
 ---
 
@@ -55,7 +55,7 @@ This updates `Cargo.toml`, `Cargo.lock`, and `crates/audio-ui/tauri.conf.json`, 
 git push origin main --follow-tags
 ```
 
-Pushing the `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml) on `windows-latest`, which builds both `AudioMixer-portable.exe` and the NSIS installer (`*-setup.exe`) and publishes them to **GitHub Releases** with auto-generated release notes.
+Pushing the `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml) on `windows-latest`, which builds both `WinSoundDeck-portable.exe` and the NSIS installer (`*-setup.exe`) and publishes them to **GitHub Releases** with auto-generated release notes.
 
 ---
 
