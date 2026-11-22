@@ -191,6 +191,120 @@ async function toggleRouting(ctx, nextEnabled, onRefresh) {
   await onRefresh(true);
 }
 
+let activeStripMenu = null;
+
+function closeStripMenu() {
+  if (activeStripMenu) {
+    activeStripMenu.remove();
+    activeStripMenu = null;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (activeStripMenu && !activeStripMenu.contains(e.target)) {
+    closeStripMenu();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeStripMenu();
+});
+
+window.addEventListener("blur", closeStripMenu);
+
+async function makePrimaryOutput(ctx, onRefresh) {
+  if (!ctx || ctx.isPrimary) return;
+  const { session, endpoint, isLoopback, activeLoopbacks } = ctx;
+  const appId = appIdFor(session);
+  const appKey = session.app_key || null;
+  const lb = activeLoopbacks.find((x) => x.target_endpoint_id === endpoint.id);
+  const targetVol = lb
+    ? lb.volume
+    : (session.saved_volumes && session.saved_volumes[endpoint.id]) ??
+      rememberedOutputVolumes.get(`${appId}:${endpoint.id}`) ??
+      session.volume ??
+      0.5;
+
+  explicitlyUncheckedIds.delete(appId);
+  await invoke("route_app", {
+    pid: session.pid,
+    appKey,
+    flow: "Render",
+    endpointId: endpoint.id,
+  });
+  if (isLoopback) {
+    await new Promise((r) => setTimeout(r, 250));
+    await invoke("stop_loopback", {
+      pid: session.pid,
+      appKey,
+      targetEndpointId: endpoint.id,
+    });
+  }
+  await invoke("set_session_mute", {
+    endpointId: endpoint.id,
+    pid: session.pid,
+    appKey,
+    muted: false,
+  });
+  await invoke("set_app_output_volume", {
+    pid: session.pid,
+    appKey,
+    endpointId: endpoint.id,
+    volume: targetVol,
+    finalize: true,
+  });
+  await onRefresh(true);
+}
+
+function openStripContextMenu(e, ctx, onRefresh) {
+  e.preventDefault();
+  e.stopPropagation();
+  closeStripMenu();
+  if (!ctx) return;
+
+  const { session, isPrimary } = ctx;
+  const menu = document.createElement("div");
+  menu.className = "strip-context-menu";
+
+  const pinItem = document.createElement("button");
+  pinItem.type = "button";
+  pinItem.className = "strip-context-item";
+  pinItem.textContent = session.is_pinned ? "📌 Unpin App" : "📌 Pin App";
+  pinItem.onclick = async () => {
+    closeStripMenu();
+    await invoke("set_app_pinned", {
+      pid: session.pid,
+      appKey: session.app_key || null,
+      pinned: !session.is_pinned,
+    });
+    await onRefresh(true);
+  };
+
+  const primaryItem = document.createElement("button");
+  primaryItem.type = "button";
+  primaryItem.className = "strip-context-item";
+  if (isPrimary) {
+    primaryItem.textContent = "✓ Primary Output";
+    primaryItem.disabled = true;
+  } else {
+    primaryItem.textContent = "⭐ Set as Primary Output";
+    primaryItem.onclick = async () => {
+      closeStripMenu();
+      await makePrimaryOutput(ctx, onRefresh);
+    };
+  }
+
+  menu.append(pinItem, primaryItem);
+  document.body.appendChild(menu);
+
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(e.clientX, Math.max(4, window.innerWidth - rect.width - 8));
+  const top = Math.min(e.clientY, Math.max(4, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  activeStripMenu = menu;
+}
+
 export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
   const row = document.createElement("div");
   row.className = vertical
@@ -227,6 +341,7 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
     };
     icon.onclick = toggleFromStrip;
     name.onclick = toggleFromStrip;
+    row.oncontextmenu = (e) => openStripContextMenu(e, row._ctx, onRefresh);
 
     row.append(stateBadge, icon, name, stage, label);
   } else {
@@ -334,7 +449,9 @@ export function updateRoutingRow(
   const nameEl = row.querySelector(".routing-output-name");
   nameEl.textContent = labelText;
   nameEl.title = labelTitle || labelText;
-  row.title = labelTitle || labelText;
+  row.title = row.classList.contains("device-fader-strip")
+    ? `${labelTitle || labelText} — Click icon to toggle • Right-click for options`
+    : labelTitle || labelText;
 
   const primaryTag = row.querySelector(".primary-slot");
   if (primaryTag) primaryTag.style.visibility = isPrimary ? "visible" : "hidden";
