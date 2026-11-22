@@ -12,6 +12,35 @@ export async function setupAppSettingsTab() {
     };
   }
 
+  const copyBtn = document.getElementById("troubleshoot-copy-btn");
+  const issueBtn = document.getElementById("troubleshoot-issue-btn");
+  const statusEl = document.getElementById("troubleshoot-status");
+  const runDiagnostics = async (openGithubIssue) => {
+    if (copyBtn) copyBtn.disabled = true;
+    if (issueBtn) issueBtn.disabled = true;
+    if (statusEl) {
+      statusEl.textContent = "Running diagnostics and copying report to clipboard...";
+      statusEl.className = "settings-status";
+    }
+    try {
+      const msg = await invoke("run_troubleshoot_to_clipboard", { openGithubIssue });
+      if (statusEl) {
+        statusEl.textContent = msg;
+        statusEl.className = "settings-status settings-status-ok";
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = `Error: ${err}`;
+        statusEl.className = "settings-status settings-status-err";
+      }
+    } finally {
+      if (copyBtn) copyBtn.disabled = false;
+      if (issueBtn) issueBtn.disabled = false;
+    }
+  };
+  if (copyBtn) copyBtn.onclick = () => runDiagnostics(false);
+  if (issueBtn) issueBtn.onclick = () => runDiagnostics(true);
+
   const cb = document.getElementById("launch-at-login-cb");
   if (!cb) return;
 

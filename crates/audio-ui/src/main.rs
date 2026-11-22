@@ -379,6 +379,107 @@ fn open_devtools(app: AppHandle) {
     }
 }
 
+const TROUBLESHOOT_SCRIPT: &str = include_str!("../../../troubleshoot.ps1");
+const GITHUB_ISSUES_NEW_URL: &str = "https://github.com/nlsickler/WinSoundDeck/issues/new";
+
+fn percent_encode_query(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push_str("%20"),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+fn build_github_issue_url(version: &str) -> String {
+    let title = format!("[Bug v{version}]: ");
+    let body = "### Describe the issue\n<!-- What happened, and what did you expect? -->\n\n### Steps to reproduce\n1. \n\n### Diagnostic Report\n<!-- Paste the report from your clipboard below (Ctrl+V) -->\n\n";
+    format!(
+        "{GITHUB_ISSUES_NEW_URL}?title={}&body={}",
+        percent_encode_query(&title),
+        percent_encode_query(body)
+    )
+}
+
+#[tauri::command]
+async fn run_troubleshoot_to_clipboard(open_github_issue: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let temp_dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let script_path = temp_dir.join(format!("winsounddeck_troubleshoot_{pid}.ps1"));
+        let report_path = temp_dir.join(format!("winsounddeck_report_{pid}.md"));
+
+        fs::write(&script_path, TROUBLESHOOT_SCRIPT)
+            .map_err(|e| format!("Failed to write temporary troubleshoot script: {e}"))?;
+
+        let run_res = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                &script_path.to_string_lossy(),
+                "-OutFile",
+                &report_path.to_string_lossy(),
+            ])
+            .current_dir(&temp_dir)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("Failed to run troubleshoot script: {e}"));
+
+        let _ = fs::remove_file(&script_path);
+        let output = run_res?;
+        if !output.status.success() {
+            let _ = fs::remove_file(&report_path);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Troubleshoot script failed: {stderr}"));
+        }
+
+        let report_text = fs::read_to_string(&report_path)
+            .map_err(|e| format!("Failed to read diagnostic report: {e}"))?;
+        let line_count = report_text.lines().count();
+
+        let escaped_report = report_path.to_string_lossy().replace('\'', "''");
+        let clip_cmd = format!(
+            "Get-Content -LiteralPath '{escaped_report}' -Raw -Encoding UTF8 | Set-Clipboard"
+        );
+        let clip_res = Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &clip_cmd])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("Failed to copy report to clipboard: {e}"));
+        let _ = fs::remove_file(&report_path);
+
+        let clip_status = clip_res?;
+        if !clip_status.success() {
+            return Err("Failed to copy diagnostic report to clipboard".to_string());
+        }
+
+        if open_github_issue {
+            let url = build_github_issue_url(env!("CARGO_PKG_VERSION"));
+            Command::new("cmd.exe")
+                .args(["/C", "start", "", &url])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .map_err(|e| format!("Copied to clipboard, but failed to open GitHub: {e}"))?;
+            Ok(format!(
+                "Copied report ({line_count} lines) to clipboard — paste (Ctrl+V) into the opened GitHub Issue."
+            ))
+        } else {
+            Ok(format!(
+                "Diagnostic report copied to your clipboard ({line_count} lines)."
+            ))
+        }
+    })
+    .await
+    .map_err(|e| format!("Diagnostics task failed: {e}"))?
+}
+
 #[tauri::command]
 fn get_launch_at_login() -> Result<bool, String> {
     let output = Command::new("reg.exe")
@@ -724,6 +825,7 @@ fn main() {
             get_launch_at_login,
             set_launch_at_login,
             open_devtools,
+            run_troubleshoot_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -732,11 +834,20 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        daemon_launch_command, format_startup_command, is_position_visible_on_monitors,
-        load_window_state, pnp_instance_id_for_endpoint, save_window_state, WindowState,
+        build_github_issue_url, daemon_launch_command, format_startup_command,
+        is_position_visible_on_monitors, load_window_state, pnp_instance_id_for_endpoint,
+        save_window_state, WindowState,
     };
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn github_issue_url_includes_version_and_encoded_template() {
+        let url = build_github_issue_url("0.9.0");
+        assert!(url.starts_with("https://github.com/nlsickler/WinSoundDeck/issues/new?title="));
+        assert!(url.contains("0.9.0"));
+        assert!(url.contains("body="));
+    }
 
     #[test]
     fn daemon_launch_command_matches_build_mode() {
