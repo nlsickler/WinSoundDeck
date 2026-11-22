@@ -16,7 +16,8 @@ try {
 
     if (-not $InstallerOnly) {
         Write-Host "==> Building Portable executable (release, --features portable)..."
-        cargo build --release -p audio-ui --features portable --offline
+        cargo build --release -p audio-ui --features portable --locked
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         Copy-Item "target\release\audio-ui.exe" "dist\WinSoundDeck-portable.exe" -Force
         Write-Host "Portable executable: $(Resolve-Path 'dist\WinSoundDeck-portable.exe')"
     }
@@ -30,12 +31,14 @@ try {
             }
         }
         Write-Host "==> Building audio-daemon sidecar (release)..."
-        cargo build --release -p audio-daemon --offline
+        cargo build --release -p audio-daemon --locked
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         New-Item -ItemType Directory -Force "crates\audio-ui\binaries" | Out-Null
         Copy-Item "target\release\audio-daemon.exe" "crates\audio-ui\binaries\audio-daemon-x86_64-pc-windows-msvc.exe" -Force
 
         Write-Host "==> Building NSIS installer via cargo tauri build..."
         cargo tauri build --config crates/audio-ui/tauri.installer.conf.json
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         Get-ChildItem "target\release\bundle\nsis\*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName "dist\" -Force
             Write-Host "Installer: $(Join-Path (Resolve-Path 'dist') $_.Name)"
