@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_INCREMENTAL: 0
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -16,7 +19,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version "^2" --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli
       - name: Build portable and NSIS installer
         shell: pwsh
         run: .\scripts\build-release.ps1
