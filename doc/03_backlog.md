@@ -21,6 +21,7 @@ All planned enhancements from the initial backlog have been completed. Future fe
 - [ ] **CLI / Stream Deck Triggering:** Add a lightweight CLI flag (e.g., `WinSoundDeck.exe --apply-preset "Headset"`) so users can trigger presets from Stream Deck, AutoHotkey, or shortcuts.
 - [ ] **Communications Auto-Ducking:** Automatically lower music/browser/game volume by a configurable percentage while Discord/Teams/Zoom is active, then smoothly restore it.
 - [ ] **Compact "Mini Deck" Mode:** A slim always-on-top window showing just Presets + the **Devices** vertical fader shelf.
+- [ ] **Windows Authenticode Code Signing:** Set up a Windows-accepted signing solution (e.g., SignPath Foundation or Azure Artifact Signing) for the portable `.exe`, sidecar, and NSIS installer. *Gate: gated on user adoption; GitHub Artifact Attestations are already enabled in the release pipeline.*
 
 ---
 
