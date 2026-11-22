@@ -83,6 +83,16 @@
     </section>
 
     <section class="tab-panel" id="tab-devices" role="tabpanel">
+      <div class="devices-filter-bar">
+        <label class="devices-filter-check">
+          <input id="devices-show-idle-cb" type="checkbox" />
+          <span>Idle <span id="devices-idle-count" class="tab-count">0</span></span>
+        </label>
+        <label class="devices-filter-check">
+          <input id="devices-show-offline-cb" type="checkbox" />
+          <span>Offline <span id="devices-offline-count" class="tab-count">0</span></span>
+        </label>
+      </div>
       <div id="devices-list" class="card-list"></div>
     </section>
 

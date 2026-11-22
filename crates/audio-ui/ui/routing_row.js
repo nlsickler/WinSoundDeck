@@ -174,6 +174,9 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
   label.className = vertical ? "vol-label strip-vol" : "vol-label";
 
   if (vertical) {
+    const stateBadge = document.createElement("span");
+    stateBadge.className = "badge-tag strip-state-badge collapsed";
+
     const stage = document.createElement("div");
     stage.className = "device-fader-stage";
     stage.append(sliderWrap);
@@ -185,7 +188,7 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
     icon.onclick = toggleFromStrip;
     name.onclick = toggleFromStrip;
 
-    row.append(icon, name, stage, label);
+    row.append(stateBadge, icon, name, stage, label);
   } else {
     const cb = document.createElement("input");
     cb.type = "checkbox";
@@ -242,7 +245,16 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
 
 export function updateRoutingRow(
   row,
-  { session, endpoint, activeLoopbacks, peakPidAttr, labelText, labelTitle, iconUrl = null }
+  {
+    session,
+    endpoint,
+    activeLoopbacks,
+    peakPidAttr,
+    labelText,
+    labelTitle,
+    iconUrl = null,
+    stateBadge = null,
+  }
 ) {
   const appId = appIdFor(session);
   const isPrimary = endpoint.id === session.endpoint_id;
@@ -255,6 +267,19 @@ export function updateRoutingRow(
 
   const cb = row.querySelector('input[type="checkbox"]');
   if (cb) cb.checked = enabled;
+
+  const badgeEl = row.querySelector(".strip-state-badge");
+  if (badgeEl) {
+    if (stateBadge) {
+      badgeEl.textContent = stateBadge.text;
+      badgeEl.title = stateBadge.title || stateBadge.text;
+      badgeEl.className = `badge-tag strip-state-badge strip-state-${stateBadge.variant}`;
+    } else {
+      badgeEl.textContent = "";
+      badgeEl.title = "";
+      badgeEl.className = "badge-tag strip-state-badge collapsed";
+    }
+  }
 
   const iconEl = row.querySelector(".app-icon");
   if (iconEl) {

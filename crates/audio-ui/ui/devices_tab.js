@@ -12,7 +12,27 @@ import {
 const { invoke } = window.__TAURI__.core;
 
 const collapsedDeviceIds = new Set();
-const expandedInactiveDeviceIds = new Set();
+let showIdleInDevices = false;
+let showOfflineInDevices = false;
+
+export function setupDevicesTabControls(onRefresh) {
+  const idleCb = document.getElementById("devices-show-idle-cb");
+  const offlineCb = document.getElementById("devices-show-offline-cb");
+  if (idleCb) {
+    idleCb.checked = showIdleInDevices;
+    idleCb.onchange = () => {
+      showIdleInDevices = idleCb.checked;
+      if (onRefresh) onRefresh(true);
+    };
+  }
+  if (offlineCb) {
+    offlineCb.checked = showOfflineInDevices;
+    offlineCb.onchange = () => {
+      showOfflineInDevices = offlineCb.checked;
+      if (onRefresh) onRefresh(true);
+    };
+  }
+}
 
 function buildDeviceCard(onRefresh) {
   const card = document.createElement("div");
@@ -52,24 +72,10 @@ function buildDeviceCard(onRefresh) {
   const body = document.createElement("div");
   body.className = "routing-outputs";
 
-  const activeList = document.createElement("div");
-  activeList.className = "device-fader-grid";
+  const faderGrid = document.createElement("div");
+  faderGrid.className = "device-fader-grid";
 
-  const inactiveSection = document.createElement("div");
-  inactiveSection.className = "device-inactive-section";
-
-  const inactiveToggle = document.createElement("div");
-  inactiveToggle.className = "device-inactive-toggle";
-  const inactiveChevron = document.createElement("span");
-  inactiveChevron.className = "chevron";
-  const inactiveLabel = document.createElement("span");
-  inactiveToggle.append(inactiveChevron, inactiveLabel);
-
-  const inactiveList = document.createElement("div");
-  inactiveList.className = "device-fader-grid collapsed";
-
-  inactiveSection.append(inactiveToggle, inactiveList);
-  body.append(activeList, inactiveSection);
+  body.append(faderGrid);
   card.append(header, body);
 
   const toggleExpand = () => {
@@ -88,19 +94,6 @@ function buildDeviceCard(onRefresh) {
   titleToggle.onclick = toggleExpand;
   appCountBadge.onclick = toggleExpand;
   appCountBadge.style.cursor = "pointer";
-
-  inactiveToggle.onclick = () => {
-    const ep = card._ep;
-    if (!ep) return;
-    if (expandedInactiveDeviceIds.has(ep.id)) {
-      expandedInactiveDeviceIds.delete(ep.id);
-    } else {
-      expandedInactiveDeviceIds.add(ep.id);
-    }
-    const showInactive = expandedInactiveDeviceIds.has(ep.id);
-    inactiveChevron.textContent = showInactive ? "▾" : "▸";
-    inactiveList.classList.toggle("collapsed", !showInactive);
-  };
 
   muteBtn.onclick = async () => {
     const ep = card._ep;
@@ -140,21 +133,28 @@ function buildDeviceCard(onRefresh) {
   return card;
 }
 
-function syncDeviceApps(
-  container,
-  groups,
-  ep,
-  loopbacks,
-  emptyText,
-  isInactiveList,
-  appIconCache,
-  onRefresh
-) {
+function stateBadgeFor(s) {
+  if (s.is_active) return null;
+  if (s.pid > 0) {
+    return {
+      text: "Idle",
+      variant: "idle",
+      title: "Idle (running, not currently playing audio)",
+    };
+  }
+  return {
+    text: "Offline",
+    variant: "offline",
+    title: "Offline (not currently running)",
+  };
+}
+
+function syncDeviceApps(container, groups, ep, loopbacks, appIconCache, onRefresh) {
   syncKeyedList(
     container,
     groups,
     (g) => `devapp:${g.key}`,
-    emptyText,
+    "No applications to display.",
     () => buildRoutingRow(onRefresh, { vertical: true }),
     (row, group) => {
       const s = group.primary;
@@ -164,16 +164,16 @@ function syncDeviceApps(
         .map((x) => String(x.pid))
         .join(",");
       const baseName = appDisplayName(s);
-      const statusSuffix = isInactiveList ? (s.pid > 0 ? " (Idle)" : " (Offline)") : "";
       const iconUrl = s.app_key && appIconCache ? appIconCache.get(s.app_key) || null : null;
       updateRoutingRow(row, {
         session: s,
         endpoint: ep,
         activeLoopbacks,
         peakPidAttr,
-        labelText: `${baseName}${statusSuffix}`,
+        labelText: baseName,
         labelTitle: baseName,
         iconUrl,
+        stateBadge: stateBadgeFor(s),
       });
     }
   );
@@ -202,9 +202,24 @@ export function renderDevicesTab(
 
   const allGroups = groupSessionsByApp(sessions);
   const playingGroups = allGroups.filter((g) => g.primary.is_active);
-  const inactiveGroups = allGroups
-    .filter((g) => !g.primary.is_active)
+  const idleGroups = allGroups
+    .filter((g) => !g.primary.is_active && g.primary.pid > 0)
+    .sort(byName);
+  const offlineGroups = allGroups
+    .filter((g) => !g.primary.is_active && g.primary.pid === 0)
     .sort(byPinnedThenName);
+
+  const idleCountEl = document.getElementById("devices-idle-count");
+  if (idleCountEl) idleCountEl.textContent = String(idleGroups.length);
+  const offlineCountEl = document.getElementById("devices-offline-count");
+  if (offlineCountEl) offlineCountEl.textContent = String(offlineGroups.length);
+
+  // Left-to-right order: Active -> Idle -> Offline
+  const displayGroups = [
+    ...playingGroups,
+    ...(showIdleInDevices ? idleGroups : []),
+    ...(showOfflineInDevices ? offlineGroups : []),
+  ];
 
   syncKeyedList(
     document.getElementById("devices-list"),
@@ -237,46 +252,19 @@ export function renderDevicesTab(
       const body = card.querySelector(".routing-outputs");
       body.classList.toggle("collapsed", !expanded);
 
-      let routedPlayingCount = 0;
-      for (const g of playingGroups) {
+      let routedCount = 0;
+      for (const g of displayGroups) {
         const s = g.primary;
         const activeLoopbacks = loopbacksForSession(loopbacks, s);
         const isPrimary = s.endpoint_id === ep.id && !isPrimaryUnchecked(appIdFor(s));
         const isLoopback = activeLoopbacks.some((lb) => lb.target_endpoint_id === ep.id);
-        if (isPrimary || isLoopback) routedPlayingCount += 1;
+        if (isPrimary || isLoopback) routedCount += 1;
       }
       card.querySelector(".badge-muted").textContent =
-        routedPlayingCount === 1 ? "1 app" : `${routedPlayingCount} apps`;
+        routedCount === 1 ? "1 app" : `${routedCount} apps`;
 
-      const [activeList, inactiveSection] = body.children;
-      syncDeviceApps(
-        activeList,
-        playingGroups,
-        ep,
-        loopbacks,
-        "No playing applications.",
-        false,
-        appIconCache,
-        onRefresh
-      );
-
-      inactiveSection.style.display = inactiveGroups.length > 0 ? "" : "none";
-      const showInactive = expandedInactiveDeviceIds.has(ep.id);
-      const inactiveToggle = inactiveSection.querySelector(".device-inactive-toggle");
-      inactiveToggle.querySelector(".chevron").textContent = showInactive ? "▾" : "▸";
-      inactiveToggle.lastElementChild.textContent = `Idle & Offline (${inactiveGroups.length})`;
-      const inactiveList = inactiveSection.querySelector(".device-fader-grid");
-      inactiveList.classList.toggle("collapsed", !showInactive);
-      syncDeviceApps(
-        inactiveList,
-        inactiveGroups,
-        ep,
-        loopbacks,
-        "",
-        true,
-        appIconCache,
-        onRefresh
-      );
+      const faderGrid = body.querySelector(".device-fader-grid");
+      syncDeviceApps(faderGrid, displayGroups, ep, loopbacks, appIconCache, onRefresh);
     }
   );
 }

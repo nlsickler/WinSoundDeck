@@ -1,6 +1,6 @@
 import { isUserInteracting, setupTabs } from "./dom.js";
 import { renderAppsTab, setupAppsTabControls } from "./apps_tab.js";
-import { renderDevicesTab } from "./devices_tab.js";
+import { renderDevicesTab, setupDevicesTabControls } from "./devices_tab.js";
 import { renderSystemTab } from "./system_tab.js";
 import { renderPresets, setupPresetsBar } from "./presets_bar.js";
 import { renderVisibilityTab, setupVisibilityControls } from "./visibility_tab.js";
@@ -94,6 +94,7 @@ async function refreshAll(force = false) {
 
 setupTabs();
 setupAppsTabControls(refreshAll);
+setupDevicesTabControls(refreshAll);
 setupPresetsBar(refreshAll);
 setupVisibilityControls();
 setupAppSettingsTab();
