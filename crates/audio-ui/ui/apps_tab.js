@@ -52,9 +52,12 @@ function buildAppCard(onRefresh) {
   titleToggle.style.maxWidth = "none";
   const chevron = document.createElement("span");
   chevron.className = "chevron";
+  const icon = document.createElement("img");
+  icon.className = "app-icon collapsed";
+  icon.alt = "";
   const title = document.createElement("span");
   title.className = "card-title";
-  titleToggle.append(chevron, title);
+  titleToggle.append(chevron, icon, title);
 
   const pinBtn = document.createElement("button");
   pinBtn.className = "btn-pin";
@@ -235,6 +238,7 @@ function renderAppsList(
   renderEndpoints,
   loopbacks,
   includeDisconnected,
+  appIconCache,
   onRefresh
 ) {
   const groups = groupSessionsByApp(sessions);
@@ -254,6 +258,16 @@ function renderAppsList(
       card.classList.toggle("app-muted", allMuted);
 
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
+      const iconEl = card.querySelector(".app-header-row .app-icon");
+      const iconUrl = s.app_key && appIconCache ? appIconCache.get(s.app_key) : null;
+      if (iconEl) {
+        if (iconUrl) {
+          if (iconEl.src !== iconUrl) iconEl.src = iconUrl;
+          iconEl.classList.remove("collapsed");
+        } else {
+          iconEl.classList.add("collapsed");
+        }
+      }
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;
       titleEl.title = name;
@@ -351,6 +365,7 @@ export function renderAppsTab(
   endpoints,
   loopbacks,
   includeDisconnected,
+  appIconCache,
   onRefresh
 ) {
   const renderEndpoints = endpoints.filter((e) => e.flow === "Render");
@@ -371,6 +386,7 @@ export function renderAppsTab(
     renderEndpoints,
     loopbacks,
     includeDisconnected,
+    appIconCache,
     onRefresh
   );
 
@@ -382,6 +398,7 @@ export function renderAppsTab(
     renderEndpoints,
     loopbacks,
     includeDisconnected,
+    appIconCache,
     onRefresh
   );
 
@@ -394,6 +411,7 @@ export function renderAppsTab(
     renderEndpoints,
     loopbacks,
     includeDisconnected,
+    appIconCache,
     onRefresh
   );
 }

@@ -9,6 +9,35 @@ import { setupAppSettingsTab } from "./settings_tab.js";
 const { invoke } = window.__TAURI__.core;
 
 let includeDisconnected = false;
+const appIconCache = new Map();
+const iconFetchInFlight = new Set();
+
+function ensureAppIcons(sessions) {
+  const missing = [];
+  for (const s of sessions) {
+    const key = s.app_key;
+    if (key && !appIconCache.has(key) && !iconFetchInFlight.has(key)) {
+      iconFetchInFlight.add(key);
+      missing.push(key);
+    }
+  }
+  if (missing.length === 0) return;
+  invoke("get_app_icons", { paths: missing })
+    .then((icons) => {
+      let updated = false;
+      for (const path of missing) {
+        iconFetchInFlight.delete(path);
+        const url = icons && icons[path] ? icons[path] : null;
+        appIconCache.set(path, url);
+        if (url) updated = true;
+      }
+      if (updated) refreshAll(false);
+    })
+    .catch((err) => {
+      for (const path of missing) iconFetchInFlight.delete(path);
+      console.error("get_app_icons error:", err);
+    });
+}
 
 async function refreshAll(force = false) {
   if (!force && isUserInteracting()) return;
@@ -37,6 +66,7 @@ async function refreshAll(force = false) {
       status.endpoints,
       status.loopbacks || [],
       includeDisconnected,
+      appIconCache,
       refreshAll
     );
     renderDevicesTab(
@@ -44,8 +74,10 @@ async function refreshAll(force = false) {
       appSessions,
       status.loopbacks || [],
       includeDisconnected,
+      appIconCache,
       refreshAll
     );
+    ensureAppIcons(appSessions);
     renderSystemTab(status.endpoints, includeDisconnected, refreshAll);
     renderVisibilityTab(status.endpoints, refreshAll);
 

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
 use std::fs;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -7,6 +8,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use audio_core::icon::extract_exe_icon_data_url;
 use audio_core::ipc::{
     install_ctrl_c_daemon_shutdown, send_ipc_request, DaemonStatus, IpcRequest, IpcResponse,
     PeakLevels, PresetSummary, DEFAULT_PIPE_NAME,
@@ -76,6 +78,49 @@ fn ensure_daemon_running() {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+}
+
+#[derive(Default)]
+struct AppIconCache(Mutex<HashMap<String, Option<String>>>);
+
+#[tauri::command]
+fn get_app_icons(
+    paths: Vec<String>,
+    cache: tauri::State<'_, AppIconCache>,
+) -> HashMap<String, String> {
+    let mut missing = Vec::new();
+    let mut result = HashMap::new();
+    if let Ok(guard) = cache.0.lock() {
+        for path in &paths {
+            match guard.get(path) {
+                Some(Some(url)) => {
+                    result.insert(path.clone(), url.clone());
+                }
+                Some(None) => {}
+                None => missing.push(path.clone()),
+            }
+        }
+    }
+
+    if !missing.is_empty() {
+        let extracted: Vec<(String, Option<String>)> = missing
+            .into_iter()
+            .map(|p| {
+                let url = extract_exe_icon_data_url(&p);
+                (p, url)
+            })
+            .collect();
+        if let Ok(mut guard) = cache.0.lock() {
+            for (p, url) in extracted {
+                if let Some(ref u) = url {
+                    result.insert(p.clone(), u.clone());
+                }
+                guard.insert(p, url);
+            }
+        }
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -564,6 +609,7 @@ fn main() {
     let event_win_state = std::sync::Arc::clone(&last_window_state);
 
     tauri::Builder::default()
+        .manage(AppIconCache::default())
         .setup(move |app| {
             // Keep Tauri's STA setup hook non-blocking; spawn daemon & populate presets off-thread.
             let menu = build_tray_menu_with_presets(app.handle(), None)?;
@@ -647,6 +693,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_status,
             get_peaks,
+            get_app_icons,
             list_presets,
             apply_preset,
             save_current_as_preset,

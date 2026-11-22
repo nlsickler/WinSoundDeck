@@ -2,6 +2,7 @@ mod com;
 mod endpoint;
 mod enumerator;
 mod events;
+pub mod icon;
 mod instance;
 pub mod ipc;
 pub mod logging;

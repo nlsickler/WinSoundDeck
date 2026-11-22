@@ -58,6 +58,10 @@ export function buildRoutingRow(onRefresh) {
   const cb = document.createElement("input");
   cb.type = "checkbox";
 
+  const icon = document.createElement("img");
+  icon.className = "app-icon app-icon-sm collapsed";
+  icon.alt = "";
+
   const name = document.createElement("span");
   name.className = "routing-output-name";
 
@@ -71,7 +75,7 @@ export function buildRoutingRow(onRefresh) {
   const label = document.createElement("span");
   label.className = "vol-label";
 
-  row.append(cb, name, primaryTag, sliderWrap, label);
+  row.append(cb, icon, name, primaryTag, sliderWrap, label);
 
   cb.onchange = async () => {
     const ctx = row._ctx;
@@ -217,7 +221,7 @@ export function buildRoutingRow(onRefresh) {
 
 export function updateRoutingRow(
   row,
-  { session, endpoint, activeLoopbacks, peakPidAttr, labelText, labelTitle }
+  { session, endpoint, activeLoopbacks, peakPidAttr, labelText, labelTitle, iconUrl = null }
 ) {
   const appId = appIdFor(session);
   const isPrimary = endpoint.id === session.endpoint_id;
@@ -230,6 +234,16 @@ export function updateRoutingRow(
 
   const cb = row.querySelector('input[type="checkbox"]');
   cb.checked = enabled;
+
+  const iconEl = row.querySelector(".app-icon");
+  if (iconEl) {
+    if (iconUrl) {
+      if (iconEl.src !== iconUrl) iconEl.src = iconUrl;
+      iconEl.classList.remove("collapsed");
+    } else {
+      iconEl.classList.add("collapsed");
+    }
+  }
 
   const nameEl = row.querySelector(".routing-output-name");
   nameEl.textContent = labelText;

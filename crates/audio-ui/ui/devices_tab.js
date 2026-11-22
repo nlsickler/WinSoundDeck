@@ -140,7 +140,16 @@ function buildDeviceCard(onRefresh) {
   return card;
 }
 
-function syncDeviceApps(container, groups, ep, loopbacks, emptyText, isInactiveList, onRefresh) {
+function syncDeviceApps(
+  container,
+  groups,
+  ep,
+  loopbacks,
+  emptyText,
+  isInactiveList,
+  appIconCache,
+  onRefresh
+) {
   syncKeyedList(
     container,
     groups,
@@ -156,6 +165,7 @@ function syncDeviceApps(container, groups, ep, loopbacks, emptyText, isInactiveL
         .join(",");
       const baseName = appDisplayName(s);
       const statusSuffix = isInactiveList ? (s.pid > 0 ? " (Idle)" : " (Offline)") : "";
+      const iconUrl = s.app_key && appIconCache ? appIconCache.get(s.app_key) || null : null;
       updateRoutingRow(row, {
         session: s,
         endpoint: ep,
@@ -163,6 +173,7 @@ function syncDeviceApps(container, groups, ep, loopbacks, emptyText, isInactiveL
         peakPidAttr,
         labelText: `${baseName}${statusSuffix}`,
         labelTitle: baseName,
+        iconUrl,
       });
     }
   );
@@ -173,6 +184,7 @@ export function renderDevicesTab(
   sessions,
   loopbacks,
   includeDisconnected,
+  appIconCache,
   onRefresh
 ) {
   const renderEndpoints = endpoints.filter(
@@ -244,6 +256,7 @@ export function renderDevicesTab(
         loopbacks,
         "No playing applications.",
         false,
+        appIconCache,
         onRefresh
       );
 
@@ -261,6 +274,7 @@ export function renderDevicesTab(
         loopbacks,
         "",
         true,
+        appIconCache,
         onRefresh
       );
     }

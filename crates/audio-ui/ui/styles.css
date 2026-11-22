@@ -868,3 +868,20 @@ button:hover {
 .device-inactive-toggle:hover {
   color: var(--text);
 }
+
+.app-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.app-icon-sm {
+  width: 14px;
+  height: 14px;
+}
+
+.app-icon.collapsed {
+  display: none;
+}
