@@ -17,7 +17,7 @@ WinSoundDeck gives you full control over where every application plays, how loud
 
 - **Zero Virtual Drivers:** Works directly with Windows Core Audio in user mode. No virtual sound cards cluttering your Windows Sound settings, no forced surround downmixing, and no audio drop-outs from driver crashes.
 - **Two Views for Any Workflow:** Manage routing **per-application** in the **Apps** tab, or switch to the **Devices** tab for a compact vertical-fader sound deck organized by output device.
-- **Play to Multiple Devices at Once:** Send an app to your headphones *and* mirror it to desktop speakers or a TV simultaneously—each with its own independent volume slider.
+- **Play to Multiple Devices at Once:** Send an app to your headphones *and* mirror it to desktop speakers or a TV simultaneously—each with its own independent volume slider. *(Note: primary routing is persisted by Windows, while multi-output mirroring requires WinSoundDeck to stay running in the system tray.)*
 - **Dock & Headset Resilient:** Automatically recovers your routes and active preset when you plug or unplug a USB-C dock, monitor, or Bluetooth headset.
 - **Tiny Footprint:** Built in native Rust + Tauri with zero telemetry, no account required, and an optional system-tray **Launch at Windows login** toggle.
 
@@ -55,7 +55,7 @@ Once running, WinSoundDeck lives in your **System Tray** and remembers its windo
 
 ## How It Compares
 
-Looking at how WinSoundDeck stacks up against **SteelSeries GG Sonar** or **Logitech MIXLINE**? See [doc/01_available_alternatives.md](doc/01_available_alternatives.md).
+Looking at how WinSoundDeck stacks up against **EarTrumpet**, **SteelSeries GG Sonar**, or **Logitech MIXLINE**? See [doc/01_available_alternatives.md](doc/01_available_alternatives.md).
 
 ---
 

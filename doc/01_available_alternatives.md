@@ -1,6 +1,6 @@
-# Available Alternatives — SteelSeries GG Sonar vs. Logitech MIXLINE vs. WinSoundDeck
+# Available Alternatives — EarTrumpet vs. SteelSeries GG Sonar vs. Logitech MIXLINE vs. WinSoundDeck
 
-This document compares **SteelSeries GG (Sonar)**, **Logitech MIXLINE**, and **WinSoundDeck** across architecture, routing model, system footprint, and ideal use cases.
+This document compares **EarTrumpet**, **SteelSeries GG (Sonar)**, **Logitech MIXLINE**, and **WinSoundDeck** across architecture, routing model, system footprint, and ideal use cases.
 
 > For WinSoundDeck's own architecture and trade-offs, see [00_high_level_spec.md](00_high_level_spec.md) and [04_design_decisions.md](04_design_decisions.md).
 
@@ -8,23 +8,38 @@ This document compares **SteelSeries GG (Sonar)**, **Logitech MIXLINE**, and **W
 
 ## 1. Executive Comparison Matrix
 
-| Dimension | SteelSeries GG (Sonar) | Logitech MIXLINE | WinSoundDeck |
-| :--- | :--- | :--- | :--- |
-| **Audio Architecture** | Multiple kernel-level Virtual Audio Drivers (VADs) | Single kernel-level Virtual Audio Driver | **Zero drivers** — user-mode Windows Core Audio (WASAPI / COM / `VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`) |
-| **Windows Sound Device Clutter** | High — adds 5+ virtual playback/recording endpoints (`Game`, `Chat`, `Media`, `Aux`, `Mic`) | Low–Moderate — adds virtual routing endpoints managed by MIXLINE | **None** — routes directly to existing physical/OS endpoints; hides unwanted devices via **Device Visibility** |
-| **Routing Model** | Fixed channel buckets (`Game`, `Chat`, `Media`, `Aux`, `Mic`) → 1 output device per channel | Visual drag-and-drop patchbay (inputs/apps → virtual submixes/outputs) | **Direct per-app primary route** (`IAudioPolicyConfigFactory`) + **per-app multi-output teeing** (`LoopbackTee`) with independent volume/mute per output |
-| **Multi-Output Audio (Same App → 2+ Devices)** | Limited (Stream Mode splits Mixes, but standard channels target one physical output each) | Yes — route any input to multiple outputs/submixes simultaneously | **Yes** — any app can play to a primary output and mirror to any number of secondary outputs with independent faders |
-| **DSP / EQ / Mic Processing** | **Strong** — 10-band parametric EQ per channel, spatial audio, ClearCast AI mic noise cancellation, ChatMix | Minimal — focuses on mixing/routing; can downmix 5.1/7.1 spatial audio to stereo | **None** — delegates hardware DSP/spatial formats directly to the physical endpoint drivers |
-| **Streamer / OBS Multi-Track Submixes** | Supported via Streamer Mode (`Personal` vs. `Stream` mixes), though requires careful OBS setup | **Strong** — built specifically for streamers/creators with OBS/Streamlabs VOD track splits | Not targeted — no virtual microphone or virtual OBS capture bus |
-| **Global Hardware & Routing Presets** | Per-channel config & device fallback | Saved routing/mix configurations | **Global multi-endpoint presets** (`presets.json`) with OS Default/Comms role switching, hardware volume/mute targets, and **snapshot/restore** |
-| **Hot-Plug & Dock Resilience** | Can lose/reset routing across Windows updates or GG service restarts | Dependent on virtual driver stability across sleep/wake and device changes | **Reactive `300ms` debounced `IMMNotificationClient`** re-arms session watchers and re-applies active presets automatically on USB-C dock/headset changes |
-| **Offline App & Device Memory** | Apps generally must be active/playing to be detected and assigned | Apps/inputs managed within active patchbay | **Pinning (`📌`)** persists routes/volumes across restarts; **Offline** shelf & `known_endpoints` cache preserve rules even when apps or docks are disconnected |
-| **Footprint & Suite Lock-In** | Heavy — bundled inside SteelSeries GG (account prompts, Engine/Moments bloat, background services) | Moderate — standalone desktop app + virtual audio driver | **Lightweight** — native Rust daemon + Tauri v2 tray UI (~few MB), zero telemetry, **Portable `.exe`** or **NSIS installer** |
-| **License & Platform** | Proprietary freeware (Windows 10/11) | Proprietary freeware (Windows 10/11) | **Open source** (Windows 10/11) |
+| Dimension | EarTrumpet | SteelSeries GG (Sonar) | Logitech MIXLINE | WinSoundDeck |
+| :--- | :--- | :--- | :--- | :--- |
+| **Audio Architecture** | **Zero drivers** — Windows Core Audio (WASAPI / COM) | Multiple kernel-level Virtual Audio Drivers (VADs) | Single kernel-level Virtual Audio Driver | **Zero drivers** — user-mode Windows Core Audio (WASAPI / COM / `VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`) |
+| **Windows Sound Device Clutter** | **None** — uses existing OS endpoints | High — adds 5+ virtual playback/recording endpoints (`Game`, `Chat`, `Media`, `Aux`, `Mic`) | Low–Moderate — adds virtual routing endpoints managed by MIXLINE | **None** — routes directly to existing physical/OS endpoints; hides unwanted devices via **I/O Visibility** |
+| **Routing Model** | Quick per-app device move (1 output per app at a time) | Fixed channel buckets (`Game`, `Chat`, `Media`, `Aux`, `Mic`) → 1 output device per channel | Visual drag-and-drop patchbay (inputs/apps → virtual submixes/outputs) | **Direct per-app primary route** (`IAudioPolicyConfigFactory`) + **per-app multi-output teeing** (`LoopbackTee`) with independent volume/mute per output |
+| **Multi-Output Audio (Same App → 2+ Devices)** | No (single output per app) | Limited (Stream Mode splits Mixes, but standard channels target one physical output each) | Yes — route any input to multiple outputs/submixes simultaneously | **Yes** — any app can play to a primary output and mirror to any number of secondary outputs with independent faders *(requires WinSoundDeck running)* |
+| **DSP / EQ / Mic Processing** | None | **Strong** — 10-band parametric EQ per channel, spatial audio, ClearCast AI mic noise cancellation, ChatMix | Minimal — focuses on mixing/routing; can downmix 5.1/7.1 spatial audio to stereo | **None** — delegates hardware DSP/spatial formats directly to the physical endpoint drivers |
+| **Streamer / OBS Multi-Track Submixes** | No | Supported via Streamer Mode (`Personal` vs. `Stream` mixes), though requires careful OBS setup | **Strong** — built specifically for streamers/creators with OBS/Streamlabs VOD track splits | Not targeted — no virtual microphone or virtual OBS capture bus |
+| **Global Hardware & Routing Presets** | No | Per-channel config & device fallback | Saved routing/mix configurations | **Global multi-endpoint presets** (`presets.json`) with OS Default/Comms role switching, hardware volume/mute targets, and **snapshot/restore** |
+| **Hot-Plug & Dock Resilience** | Follows Windows defaults; no preset re-apply | Can lose/reset routing across Windows updates or GG service restarts | Dependent on virtual driver stability across sleep/wake and device changes | **Reactive `300ms` debounced `IMMNotificationClient`** re-arms session watchers and re-applies active presets automatically on USB-C dock/headset changes |
+| **Offline App & Device Memory** | No (live Windows sessions only) | Apps generally must be active/playing to be detected and assigned | Apps/inputs managed within active patchbay | **Pinning (`📌`)** persists routes/volumes across restarts; **Offline** filter & `known_endpoints` cache preserve rules even when apps or docks are disconnected |
+| **Footprint & Suite Lock-In** | **Lightweight** — native Windows tray flyout (Microsoft Store / winget) | Heavy — bundled inside SteelSeries GG (account prompts, Engine/Moments bloat, background services) | Moderate — standalone desktop app + virtual audio driver | **Lightweight** — native Rust daemon + Tauri v2 tray UI (~few MB), zero telemetry, **Portable `.exe`** or **NSIS installer** |
+| **License & Platform** | **Open source** (MIT, Windows 10/11) | Proprietary freeware (Windows 10/11) | Proprietary freeware (Windows 10/11) | **Open source** (`MIT OR Apache-2.0`, Windows 10/11) |
 
 ---
 
 ## 2. Detailed Breakdown
+
+### EarTrumpet
+
+**What it is:** A popular, open-source Windows volume control replacement that enhances the system tray flyout with per-application volume sliders and quick per-app output switching.
+
+* **Strengths:**
+  * **Seamless Windows integration:** Replaces the stock taskbar volume flyout with a clean, native-feeling per-app mixer.
+  * **Zero virtual drivers & lightweight:** Uses Windows Core Audio directly with minimal footprint and no extra audio endpoints.
+  * **Quick single-device switching:** Easy to move an active app from one playback device to another.
+* **Limitations & Friction:**
+  * **No multi-output mirroring:** An app can only play to one output device at a time.
+  * **No global presets or OS role orchestration:** Cannot snapshot/restore hardware volumes, mute states, and `Default` / `Communications` roles together as one-click profiles.
+  * **No offline app pinning or device visibility cleanup:** Only manages currently active Windows sessions and all OS-visible endpoints.
+
+---
 
 ### SteelSeries GG (Sonar)
 
@@ -75,6 +90,7 @@ This document compares **SteelSeries GG (Sonar)**, **Logitech MIXLINE**, and **W
 
 ## 3. When to Choose Which
 
+* **Choose EarTrumpet** if you want the simplest possible Windows taskbar volume flyout for per-app sliders and quick single-device switching without presets or multi-output mirroring.
 * **Choose SteelSeries GG Sonar** if you want an all-in-one gaming audio suite with built-in parametric EQ, virtual surround, AI mic noise cancellation, and ChatMix—and don't mind virtual audio devices or running the SteelSeries GG suite.
 * **Choose Logitech MIXLINE** if you are a **live streamer or podcaster** who wants a visual patchbay to build separate headphone, stream, and VOD recording submixes for OBS/Streamlabs.
 * **Choose WinSoundDeck** if you want a **fast, driver-free, open-source Windows utility** for per-app routing, multi-output mirroring, hardware + OS-role presets, and rock-solid USB-C dock / Bluetooth hot-plug behavior without suite bloat or virtual device clutter.

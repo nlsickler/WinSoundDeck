@@ -48,6 +48,7 @@ The **Apps** tab organizes audio by application, giving you fine-grained routing
 Expand an app card to view available output devices (ordered **Default → Comms → Alphabetical**):
 - **Primary Output (`P`):** Check a device to route the app's primary Windows audio stream to it.
 - **Mirror to Additional Devices:** Check a *second* (or third) device to mirror the app's audio simultaneously with its own independent volume slider.
+  > **Note:** Primary output routes are applied directly in Windows, whereas secondary **multi-output mirroring** runs inside WinSoundDeck's background service—so WinSoundDeck must remain running (minimized to the system tray) for mirrored outputs to stay active.
 - **Change Primary Output:** **Right-click** any output row inside an app card and select **⭐ Set as Primary Output** (already-primary rows display `✓ Primary Output`).
 
 ---
