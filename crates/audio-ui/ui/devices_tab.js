@@ -1,4 +1,9 @@
-import { syncKeyedList, syncMuteIconButton } from "./dom.js";
+import {
+  loadBoolPref,
+  saveBoolPref,
+  syncKeyedList,
+  syncMuteIconButton,
+} from "./dom.js";
 import {
   appDisplayName,
   appIdFor,
@@ -14,23 +19,6 @@ const { invoke } = window.__TAURI__.core;
 
 const PREF_SHOW_IDLE = "winsounddeck.devices.show_idle";
 const PREF_SHOW_OFFLINE = "winsounddeck.devices.show_offline";
-
-function loadBoolPref(key, fallback = false) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw === null ? fallback : raw === "true";
-  } catch {
-    return fallback;
-  }
-}
-
-function saveBoolPref(key, val) {
-  try {
-    window.localStorage.setItem(key, String(Boolean(val)));
-  } catch {
-    // Ignore storage quota / privacy errors
-  }
-}
 
 const collapsedDeviceIds = new Set();
 let showIdleInDevices = loadBoolPref(PREF_SHOW_IDLE, false);

@@ -47,20 +47,58 @@ export function createMeterSlider() {
   return { wrap, slider, volFill, meterFill };
 }
 
+const PREF_ACTIVE_TAB = "winsounddeck.ui.active_tab";
+
+export function loadPref(key, fallback = null) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : raw;
+  } catch {
+    return fallback;
+  }
+}
+
+export function savePref(key, value) {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Ignore storage quota / privacy errors
+  }
+}
+
+export function loadBoolPref(key, fallback = false) {
+  const raw = loadPref(key, null);
+  return raw === null ? fallback : raw === "true";
+}
+
+export function saveBoolPref(key, value) {
+  savePref(key, Boolean(value));
+}
+
 export function setupTabs() {
-  const buttons = document.querySelectorAll(".tab-btn");
-  const panels = document.querySelectorAll(".tab-panel");
+  const buttons = Array.from(document.querySelectorAll(".tab-btn"));
+  const panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+  const activateTab = (tab) => {
+    const valid = buttons.some((b) => b.dataset.tab === tab) ? tab : "apps";
+    for (const b of buttons) {
+      const selected = b.dataset.tab === valid;
+      b.classList.toggle("active", selected);
+      b.setAttribute("aria-selected", String(selected));
+    }
+    for (const p of panels) {
+      p.classList.toggle("active", p.id === `tab-${valid}`);
+    }
+    return valid;
+  };
+
+  const savedTab = loadPref(PREF_ACTIVE_TAB, "apps");
+  activateTab(savedTab);
+
   for (const btn of buttons) {
     btn.onclick = () => {
-      const tab = btn.dataset.tab;
-      for (const b of buttons) {
-        const selected = b.dataset.tab === tab;
-        b.classList.toggle("active", selected);
-        b.setAttribute("aria-selected", String(selected));
-      }
-      for (const p of panels) {
-        p.classList.toggle("active", p.id === `tab-${tab}`);
-      }
+      const active = activateTab(btn.dataset.tab);
+      savePref(PREF_ACTIVE_TAB, active);
     };
   }
 }
