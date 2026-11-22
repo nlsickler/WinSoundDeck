@@ -1021,6 +1021,8 @@ button:hover {
 .settings-status {
   font-size: 11px;
   color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .settings-status-ok {

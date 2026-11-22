@@ -19,7 +19,7 @@ export async function setupAppSettingsTab() {
     if (copyBtn) copyBtn.disabled = true;
     if (issueBtn) issueBtn.disabled = true;
     if (statusEl) {
-      statusEl.textContent = "Running diagnostics and copying report to clipboard...";
+      statusEl.textContent = "Generating diagnostic report in TEMP...";
       statusEl.className = "settings-status";
     }
     try {

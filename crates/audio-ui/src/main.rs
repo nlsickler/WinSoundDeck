@@ -396,40 +396,16 @@ fn percent_encode_query(input: &str) -> String {
     out
 }
 
-fn build_github_issue_url(version: &str, report_text: &str) -> (String, bool) {
-    const MAX_URL_LEN: usize = 6000;
+fn build_github_issue_url(version: &str, report_path: &Path) -> String {
     let title = format!("[Bug v{version}]: ");
-    let prefix = format!(
-        "{GITHUB_ISSUES_NEW_URL}?title={}&body=",
-        percent_encode_query(&title)
+    let path_str = report_path.to_string_lossy();
+    let body = format!(
+        "### Describe the issue\n<!-- What happened, and what did you expect? -->\n\n### Steps to reproduce\n1. \n\n### Diagnostic Report\nPlease attach the generated diagnostic file (path copied to your clipboard):\n`{path_str}`\n\n*(Click \"Paste, drop, or click to add files\" below and paste the file path into the file picker.)*\n"
     );
-    let header = "### Describe the issue\n<!-- What happened, and what did you expect? -->\n\n### Steps to reproduce\n1. \n\n### Diagnostic Report\n";
-    let full_body = format!(
-        "{header}<details>\n<summary>WinSoundDeck Diagnostics</summary>\n\n```markdown\n{report_text}\n```\n\n</details>\n"
-    );
-    let full_url = format!("{prefix}{}", percent_encode_query(&full_body));
-    if full_url.len() <= MAX_URL_LEN {
-        return (full_url, true);
-    }
-
-    let note = "> **Note:** Report was truncated to fit URL limits. The full report is on your clipboard — press **Ctrl+V** below to paste it.\n\n";
-    let mut snippet = String::new();
-    for line in report_text.lines() {
-        let candidate_body = format!(
-            "{header}{note}<details>\n<summary>WinSoundDeck Diagnostics (Partial)</summary>\n\n```markdown\n{snippet}{line}\n```\n\n</details>\n"
-        );
-        if prefix.len() + percent_encode_query(&candidate_body).len() > MAX_URL_LEN {
-            break;
-        }
-        snippet.push_str(line);
-        snippet.push('\n');
-    }
-    let trimmed_body = format!(
-        "{header}{note}<details>\n<summary>WinSoundDeck Diagnostics (Partial)</summary>\n\n```markdown\n{snippet}```\n\n</details>\n"
-    );
-    (
-        format!("{prefix}{}", percent_encode_query(&trimmed_body)),
-        false,
+    format!(
+        "{GITHUB_ISSUES_NEW_URL}?title={}&body={}",
+        percent_encode_query(&title),
+        percent_encode_query(&body)
     )
 }
 
@@ -438,8 +414,12 @@ async fn run_troubleshoot_to_clipboard(open_github_issue: bool) -> Result<String
     tauri::async_runtime::spawn_blocking(move || {
         let temp_dir = std::env::temp_dir();
         let pid = std::process::id();
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let script_path = temp_dir.join(format!("winsounddeck_troubleshoot_{pid}.ps1"));
-        let report_path = temp_dir.join(format!("winsounddeck_report_{pid}.md"));
+        let report_path = temp_dir.join(format!("winsounddeck-diagnostics-{stamp}.md"));
 
         fs::write(&script_path, format!("\u{FEFF}{TROUBLESHOOT_SCRIPT}"))
             .map_err(|e| format!("Failed to write temporary troubleshoot script: {e}"))?;
@@ -467,47 +447,36 @@ async fn run_troubleshoot_to_clipboard(open_github_issue: bool) -> Result<String
             return Err(format!("Troubleshoot script failed: {stderr}"));
         }
 
-        let report_text = fs::read_to_string(&report_path)
-            .map_err(|e| format!("Failed to read diagnostic report: {e}"))?;
-        let line_count = report_text.lines().count();
-
-        let escaped_report = report_path.to_string_lossy().replace('\'', "''");
-        let clip_cmd = format!(
-            "Get-Content -LiteralPath '{escaped_report}' -Raw -Encoding UTF8 | Set-Clipboard"
-        );
-        let clip_res = Command::new("powershell.exe")
-            .args(["-NoProfile", "-Command", &clip_cmd])
+        let report_str = report_path.to_string_lossy().to_string();
+        let escaped_path = report_str.replace('\'', "''");
+        let clip_status = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Set-Clipboard -Value '{escaped_path}'"),
+            ])
             .creation_flags(CREATE_NO_WINDOW)
             .status()
-            .map_err(|e| format!("Failed to copy report to clipboard: {e}"));
-        let _ = fs::remove_file(&report_path);
+            .map_err(|e| format!("Failed to copy report path to clipboard: {e}"))?;
 
-        let clip_status = clip_res?;
         if !clip_status.success() {
-            return Err("Failed to copy diagnostic report to clipboard".to_string());
+            return Err("Failed to copy diagnostic report path to clipboard".to_string());
         }
 
         if open_github_issue {
-            let (url, included_full) =
-                build_github_issue_url(env!("CARGO_PKG_VERSION"), &report_text);
+            let url = build_github_issue_url(env!("CARGO_PKG_VERSION"), &report_path);
             let ps_url = url.replace('\'', "''");
             Command::new("powershell.exe")
                 .args(["-NoProfile", "-Command", &format!("Start-Process '{ps_url}'")])
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn()
-                .map_err(|e| format!("Copied to clipboard, but failed to open GitHub: {e}"))?;
-            if included_full {
-                Ok(format!(
-                    "Opened GitHub Issue with full report ({line_count} lines) and copied to clipboard."
-                ))
-            } else {
-                Ok(format!(
-                    "Copied full report ({line_count} lines) to clipboard — paste (Ctrl+V) into the opened GitHub Issue."
-                ))
-            }
+                .map_err(|e| format!("Report saved, but failed to open GitHub: {e}"))?;
+            Ok(format!(
+                "Report saved & path copied to clipboard — attach it to the GitHub Issue:\n{report_str}"
+            ))
         } else {
             Ok(format!(
-                "Diagnostic report copied to your clipboard ({line_count} lines)."
+                "Report saved & path copied to clipboard (attach to a bug report):\n{report_str}"
             ))
         }
     })
@@ -877,19 +846,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn github_issue_url_includes_version_and_truncates_large_reports() {
-        let (short_url, full) = build_github_issue_url("0.9.0", "OS: Windows 11");
-        assert!(full);
-        assert!(short_url.starts_with("https://github.com/nlsickler/WinSoundDeck/issues/new?title="));
-        assert!(short_url.contains("0.9.0"));
-        assert!(short_url.contains("body="));
-        assert!(short_url.contains("Windows%2011"));
-
-        let huge_report = "line of diagnostic output\n".repeat(500);
-        let (long_url, included_full) = build_github_issue_url("0.9.0", &huge_report);
-        assert!(!included_full);
-        assert!(long_url.len() <= 6000);
-        assert!(long_url.contains("body="));
+    fn github_issue_url_includes_version_and_report_path() {
+        let url = build_github_issue_url("0.9.0", Path::new(r"C:\Temp\winsounddeck-diagnostics.md"));
+        assert!(url.starts_with("https://github.com/nlsickler/WinSoundDeck/issues/new?title="));
+        assert!(url.contains("0.9.0"));
+        assert!(url.contains("body="));
+        assert!(url.contains("winsounddeck-diagnostics.md"));
     }
 
     #[test]
