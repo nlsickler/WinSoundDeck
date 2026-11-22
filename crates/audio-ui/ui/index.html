@@ -7,17 +7,8 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="title-group">
-      <h1>WinSoundDeck</h1>
-      <span id="daemon-badge" class="badge badge-offline collapsed" title="Daemon Offline">⚠️</span>
-    </div>
-    <div class="topbar-actions">
-      <button id="refresh-btn" class="btn-secondary" title="Refresh">Refresh</button>
-    </div>
-  </header>
-
   <section class="presets-bar" id="presets-section">
+    <span id="daemon-badge" class="badge badge-offline collapsed" title="Daemon Offline">⚠️</span>
     <span class="presets-label">Presets</span>
     <div id="presets-list" class="presets-row"></div>
     <div id="preset-save-wrap" class="preset-save-wrap">
@@ -97,6 +88,18 @@
             </div>
             <input id="launch-at-login-cb" class="toggle-switch" type="checkbox" />
           </label>
+        </div>
+      </div>
+      <div class="io-group">
+        <h2>Advanced</h2>
+        <div class="card-list">
+          <div class="settings-row">
+            <div class="settings-row-text">
+              <span class="card-title">Force Refresh</span>
+              <span class="settings-desc">Re-query Windows audio devices, sessions, and presets.</span>
+            </div>
+            <button id="refresh-btn" class="btn-secondary" type="button">Force Refresh</button>
+          </div>
           <div class="settings-row">
             <div class="settings-row-text">
               <span class="card-title">Developer Tools</span>
