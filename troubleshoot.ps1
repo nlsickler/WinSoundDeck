@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Headless diagnostic bundle generator for WinSoundDeck WASAPI/UI hang investigation.
 .DESCRIPTION
@@ -151,7 +151,7 @@ $null = $sb.AppendLine("## 2. WASAPI IMMDeviceEnumerator Probes")
 foreach ($apt in @('STA', 'MTA')) {
     foreach ($mask in @(0xF, 0xB)) {
         $maskHex = ('0x{0:X}' -f $mask)
-        $null = $sb.AppendLine("### $apt — Mask $maskHex")
+        $null = $sb.AppendLine("### $apt - Mask $maskHex")
         $null = $sb.AppendLine('```text')
         $null = $sb.AppendLine((Invoke-WasapiProbe -Apartment $apt -Mask $mask))
         $null = $sb.AppendLine('```')

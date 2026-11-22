@@ -414,7 +414,7 @@ async fn run_troubleshoot_to_clipboard(open_github_issue: bool) -> Result<String
         let script_path = temp_dir.join(format!("winsounddeck_troubleshoot_{pid}.ps1"));
         let report_path = temp_dir.join(format!("winsounddeck_report_{pid}.md"));
 
-        fs::write(&script_path, TROUBLESHOOT_SCRIPT)
+        fs::write(&script_path, format!("\u{FEFF}{TROUBLESHOOT_SCRIPT}"))
             .map_err(|e| format!("Failed to write temporary troubleshoot script: {e}"))?;
 
         let run_res = Command::new("powershell.exe")
