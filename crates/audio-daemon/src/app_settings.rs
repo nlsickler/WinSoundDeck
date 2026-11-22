@@ -335,9 +335,11 @@ mod tests {
     #[test]
     fn save_persists_only_pinned_apps_and_preserves_visibility_flags() {
         let path = temp_settings_path("pinned_only");
-        let mut store = AppSettingsStore::default();
-        store.include_disconnected = true;
-        store.allowed_endpoints = Some(["ep-1".to_string()].into_iter().collect());
+        let mut store = AppSettingsStore {
+            include_disconnected: true,
+            allowed_endpoints: Some(["ep-1".to_string()].into_iter().collect()),
+            ..Default::default()
+        };
 
         store.apps.insert(
             "c:\\pinned.exe".to_string(),

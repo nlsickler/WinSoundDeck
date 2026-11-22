@@ -836,11 +836,20 @@ fn main() {
 mod tests {
     use super::{
         build_github_issue_url, daemon_launch_command, format_startup_command,
-        is_position_visible_on_monitors, load_window_state, pnp_instance_id_for_endpoint,
-        save_window_state, WindowState,
+        is_position_visible_on_monitors, load_window_state, percent_encode_query,
+        pnp_instance_id_for_endpoint, save_window_state, WindowState,
     };
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn percent_encode_query_escapes_reserved_and_whitespace() {
+        assert_eq!(
+            percent_encode_query("a b&c=1\n"),
+            "a%20b%26c%3D1%0A"
+        );
+        assert_eq!(percent_encode_query("v0.9.0-rc_1~"), "v0.9.0-rc_1~");
+    }
 
     #[test]
     fn github_issue_url_includes_version_without_local_paths() {

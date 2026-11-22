@@ -268,7 +268,10 @@ pub fn extract_exe_icon_data_url(exe_path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bgra_top_down_to_rgba, encode_base64, extract_exe_icon_data_url, rgba_to_png_data_url};
+    use super::{
+        bgra_top_down_to_rgba, encode_base64, encode_rgba_to_png, extract_exe_icon_data_url,
+        rgba_to_png_data_url,
+    };
 
     #[test]
     fn bgra_conversion_swaps_red_and_blue_channels() {
@@ -281,6 +284,13 @@ mod tests {
         assert_eq!(encode_base64(b"hi"), "aGk=");
         let url = rgba_to_png_data_url(1, 1, &[255, 0, 0, 255]).expect("png url");
         assert!(url.starts_with("data:image/png;base64,iVBORw0KGgo"));
+    }
+
+    #[test]
+    fn encode_rgba_to_png_rejects_invalid_dimensions_or_buffer() {
+        assert!(encode_rgba_to_png(0, 1, &[]).is_none());
+        assert!(encode_rgba_to_png(1, 0, &[]).is_none());
+        assert!(encode_rgba_to_png(2, 2, &[0, 0, 0, 0]).is_none());
     }
 
     #[test]
