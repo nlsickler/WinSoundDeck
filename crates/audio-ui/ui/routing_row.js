@@ -19,7 +19,13 @@ export function appDisplayName(s) {
 }
 
 export function stateBadgeFor(s) {
-  if (s.is_active) return null;
+  if (s.is_active) {
+    return {
+      text: "Playing",
+      variant: "playing",
+      title: "Currently playing audio",
+    };
+  }
   if (s.pid > 0) {
     return {
       text: "Idle",

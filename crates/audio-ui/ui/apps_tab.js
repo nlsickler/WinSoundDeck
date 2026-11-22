@@ -312,10 +312,16 @@ function renderAppsList(
       const showSubs = multiPid && expandedSubPidGroups.has(group.key);
       pidBadge.classList.toggle("badge-tag-btn", multiPid);
       if (multiPid) {
+        pidBadge.classList.remove("collapsed");
         pidBadge.textContent = `${group.sessions.length} PIDs ${showSubs ? "▾" : "▸"}`;
         pidBadge.title = "Click to expand individual PIDs";
+      } else if (s.pid > 0) {
+        pidBadge.classList.remove("collapsed");
+        pidBadge.textContent = `PID ${s.pid}`;
+        pidBadge.title = "";
       } else {
-        pidBadge.textContent = s.pid > 0 ? `PID ${s.pid}` : "Not running";
+        pidBadge.classList.add("collapsed");
+        pidBadge.textContent = "";
         pidBadge.title = "";
       }
 
