@@ -2,6 +2,7 @@ import { loadBoolPref, saveBoolPref, syncKeyedList } from "./dom.js";
 import {
   appDisplayName,
   appIdFor,
+  applyAppIcon,
   buildRoutingRow,
   clearPrimaryUnchecked,
   groupSessionsByApp,
@@ -282,14 +283,7 @@ function renderAppsList(
       const name = s.display_name || s.root_exe_name || s.exe_name || `PID ${s.pid}`;
       const iconEl = card.querySelector(".app-header-row .app-icon");
       const iconUrl = s.app_key && appIconCache ? appIconCache.get(s.app_key) : null;
-      if (iconEl) {
-        if (iconUrl) {
-          if (iconEl.src !== iconUrl) iconEl.src = iconUrl;
-          iconEl.classList.remove("collapsed");
-        } else {
-          iconEl.classList.add("collapsed");
-        }
-      }
+      applyAppIcon(iconEl, iconUrl, true);
       const titleEl = card.querySelector(".card-title");
       titleEl.textContent = name;
       titleEl.title = name;

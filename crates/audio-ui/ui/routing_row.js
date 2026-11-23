@@ -11,6 +11,37 @@ const { invoke } = window.__TAURI__.core;
 const explicitlyUncheckedIds = new Set();
 const rememberedOutputVolumes = new Map();
 
+export const DEFAULT_APP_ICON_URL =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
+      `<rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#282d3e" stroke="#3b4259" stroke-width="1.5"/>` +
+      `<rect x="6.5" y="10" width="2.5" height="7" rx="1.2" fill="#818cf8"/>` +
+      `<rect x="10.75" y="6.5" width="2.5" height="10.5" rx="1.2" fill="#a5b4fc"/>` +
+      `<rect x="15" y="9" width="2.5" height="8" rx="1.2" fill="#818cf8"/>` +
+      `</svg>`
+  );
+
+export function applyAppIcon(iconEl, iconUrl, showDefault = true) {
+  if (!iconEl) return;
+  if (!iconUrl && !showDefault) {
+    iconEl.classList.add("collapsed");
+    return;
+  }
+  const resolved = iconUrl || DEFAULT_APP_ICON_URL;
+  if (iconEl.dataset.resolvedSrc !== resolved) {
+    iconEl.dataset.resolvedSrc = resolved;
+    iconEl.onerror = () => {
+      if (iconEl.dataset.resolvedSrc !== DEFAULT_APP_ICON_URL) {
+        iconEl.dataset.resolvedSrc = DEFAULT_APP_ICON_URL;
+        iconEl.src = DEFAULT_APP_ICON_URL;
+      }
+    };
+    iconEl.src = resolved;
+  }
+  iconEl.classList.remove("collapsed");
+}
+
 export function appIdFor(s) {
   return s.pid > 0 ? String(s.pid) : s.app_key || "0";
 }
@@ -416,14 +447,7 @@ export function updateRoutingRow(
   }
 
   const iconEl = row.querySelector(".app-icon");
-  if (iconEl) {
-    if (iconUrl) {
-      if (iconEl.src !== iconUrl) iconEl.src = iconUrl;
-      iconEl.classList.remove("collapsed");
-    } else {
-      iconEl.classList.add("collapsed");
-    }
-  }
+  applyAppIcon(iconEl, iconUrl, iconUrl !== undefined && isVertical);
 
   const nameEl = row.querySelector(".routing-output-name");
   nameEl.textContent = labelText;
