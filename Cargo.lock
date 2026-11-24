@@ -78,7 +78,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "audio-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "audio-daemon"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "audio-core",
  "serde",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "audio-ui"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "audio-core",
  "audio-daemon",
