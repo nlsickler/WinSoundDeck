@@ -121,6 +121,36 @@ export function createMeterSlider() {
   return { wrap, slider, volFill, meterFill };
 }
 
+export function bindMeterSlider({
+  slider,
+  volFill,
+  meterFill,
+  label,
+  getPeakScale,
+  onInput,
+  onChange,
+}) {
+  slider.onpointerdown = () => setSliderDragging(true);
+  slider.onpointerup = () => setSliderDragging(false);
+  slider.onpointercancel = () => setSliderDragging(false);
+  slider.oninput = async (e) => {
+    const v = Number(e.target.value) / 100;
+    if (label) label.textContent = `${e.target.value}%`;
+    if (volFill) volFill.style.width = `${e.target.value}%`;
+    if (meterFill) {
+      meterFill.dataset.peakScale = getPeakScale ? getPeakScale(v) : String(v);
+    }
+    if (onInput) await onInput(v, e);
+  };
+  if (onChange) {
+    slider.onchange = async (e) => {
+      setSliderDragging(false);
+      const v = Number(e.target.value) / 100;
+      await onChange(v, e);
+    };
+  }
+}
+
 const PREF_ACTIVE_TAB = "winsounddeck.ui.active_tab";
 
 export function loadPref(key, fallback = null) {

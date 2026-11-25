@@ -3,15 +3,13 @@ import {
   appDisplayName,
   appIdFor,
   applyAppIcon,
-  buildRoutingRow,
-  clearPrimaryUnchecked,
   groupSessionsByApp,
-  isPrimaryUnchecked,
   loopbacksForSession,
   sortEndpointsByRoleAndName,
   stateBadgeFor,
-  updateRoutingRow,
-} from "./routing_row.js";
+} from "./app_utils.js";
+import { clearPrimaryUnchecked, isPrimaryUnchecked } from "./routing_actions.js";
+import { buildRoutingRow, updateRoutingRow } from "./routing_row.js";
 
 const { invoke } = window.__TAURI__.core;
 
