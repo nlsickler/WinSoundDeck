@@ -9,6 +9,65 @@ use audio_core::{
 use super::ipc_ok;
 use crate::state::DaemonState;
 
+pub(super) fn rename_preset(
+    presets: &mut [Preset],
+    id: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    let trimmed = new_name.trim();
+    if trimmed.is_empty() {
+        return Err("Preset name cannot be empty".to_string());
+    }
+    let Some(preset) = presets.iter_mut().find(|p| p.id == id) else {
+        return Err(format!("Preset '{id}' not found"));
+    };
+    preset.name = trimmed.to_string();
+    Ok(())
+}
+
+pub(super) fn reorder_presets(presets: &mut Vec<Preset>, ids: &[String]) {
+    let mut remaining = std::mem::take(presets);
+    let mut ordered = Vec::with_capacity(remaining.len());
+    for id in ids {
+        if let Some(pos) = remaining.iter().position(|p| &p.id == id) {
+            ordered.push(remaining.remove(pos));
+        }
+    }
+    ordered.extend(remaining);
+    *presets = ordered;
+}
+
+pub(super) fn handle_rename_preset(
+    state: &Arc<Mutex<DaemonState>>,
+    id: String,
+    new_name: String,
+) -> (IpcResponse, bool) {
+    let mut guard = state.lock().expect("state lock");
+    let res = rename_preset(&mut guard.config.presets, &id, &new_name).and_then(|()| {
+        let path = guard.config_path.clone();
+        guard.config.save_to_file(&path).map_err(|e| e.to_string())
+    });
+    match res {
+        Ok(()) => {
+            log_info!("RenamePreset(id={id}, new_name='{}')", new_name.trim());
+            (IpcResponse::Ok, false)
+        }
+        Err(message) => (IpcResponse::Error { message }, false),
+    }
+}
+
+pub(super) fn handle_reorder_presets(
+    state: &Arc<Mutex<DaemonState>>,
+    ids: Vec<String>,
+) -> (IpcResponse, bool) {
+    let mut guard = state.lock().expect("state lock");
+    reorder_presets(&mut guard.config.presets, &ids);
+    let path = guard.config_path.clone();
+    let res = guard.config.save_to_file(&path);
+    log_info!("ReorderPresets(count={})", guard.config.presets.len());
+    ipc_ok(res)
+}
+
 fn unique_preset_id(existing: &[Preset], name: &str) -> String {
     let mut base = String::new();
     let mut prev_dash = false;
@@ -331,5 +390,28 @@ mod tests {
         assert_eq!(unique_preset_id(&existing, "Gaming Mode"), "gaming-mode");
         assert_eq!(unique_preset_id(&existing, "Gaming  Mode"), "gaming-mode-3");
         assert_eq!(unique_preset_id(&existing, "   "), "preset");
+    }
+
+    #[test]
+    fn rename_preset_updates_trimmed_name_and_rejects_empty_or_missing() {
+        let mut presets = vec![preset("a", "Alpha"), preset("b", "Beta")];
+        assert!(rename_preset(&mut presets, "a", "  Headset Only  ").is_ok());
+        assert_eq!(presets[0].name, "Headset Only");
+        assert_eq!(presets[0].id, "a");
+
+        assert!(rename_preset(&mut presets, "a", "   ").is_err());
+        assert!(rename_preset(&mut presets, "missing", "Gamma").is_err());
+    }
+
+    #[test]
+    fn reorder_presets_orders_by_ids_and_preserves_unlisted_tail() {
+        let mut presets = vec![
+            preset("a", "Alpha"),
+            preset("b", "Beta"),
+            preset("c", "Gamma"),
+        ];
+        reorder_presets(&mut presets, &["c".into(), "a".into()]);
+        let ids: Vec<&str> = presets.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["c", "a", "b"]);
     }
 }

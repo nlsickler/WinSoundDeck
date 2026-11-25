@@ -111,6 +111,20 @@ pub fn delete_preset(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn rename_preset(app: AppHandle, id: String, new_name: String) -> Result<(), String> {
+    ipc_call(IpcRequest::RenamePreset { id, new_name })?;
+    refresh_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reorder_presets(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    ipc_call(IpcRequest::ReorderPresets { ids })?;
+    refresh_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn clear_active_preset(app: AppHandle) -> Result<(), String> {
     ipc_call(IpcRequest::ClearActivePreset)?;
     refresh_tray_menu(&app);

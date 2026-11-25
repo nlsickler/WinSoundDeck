@@ -11,7 +11,10 @@ use audio_core::{
 
 use self::app_routing::{handle_route_app, handle_start_loopback};
 use self::app_volume::handle_set_app_output_volume;
-use self::presets::{handle_apply_preset, handle_save_current_as_preset};
+use self::presets::{
+    handle_apply_preset, handle_rename_preset, handle_reorder_presets,
+    handle_save_current_as_preset,
+};
 use crate::state::DaemonState;
 use crate::status::build_daemon_status;
 
@@ -130,6 +133,8 @@ pub fn handle_request(
             log_info!("DeletePreset(id={id})");
             ipc_ok(res)
         }
+        IpcRequest::RenamePreset { id, new_name } => handle_rename_preset(state, id, new_name),
+        IpcRequest::ReorderPresets { ids } => handle_reorder_presets(state, ids),
         IpcRequest::ClearActivePreset => {
             let (snap, res) = {
                 let mut guard = state.lock().expect("state lock");

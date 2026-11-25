@@ -35,6 +35,13 @@ pub enum IpcRequest {
     DeletePreset {
         id: String,
     },
+    RenamePreset {
+        id: String,
+        new_name: String,
+    },
+    ReorderPresets {
+        ids: Vec<String>,
+    },
     ClearActivePreset,
     SetEndpointVolume {
         flow: DataFlow,

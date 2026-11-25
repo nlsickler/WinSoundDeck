@@ -9,7 +9,7 @@
 <body>
   <section class="presets-bar" id="presets-section">
     <span id="daemon-badge" class="badge badge-offline collapsed" title="Daemon Offline">⚠️</span>
-    <span class="presets-label">Presets</span>
+    <button id="presets-manage-btn" type="button" class="presets-label presets-label-btn" title="Manage presets (rename & reorder)">Presets</button>
     <div id="presets-list" class="presets-row"></div>
     <div id="preset-save-wrap" class="preset-save-wrap">
       <button id="preset-save-btn" class="btn-icon-action" title="Save preset">💾</button>
@@ -158,6 +158,19 @@
       </svg>
       <span id="filter-fab-dot" class="filter-fab-dot collapsed"></span>
     </button>
+  </div>
+
+  <div id="preset-manager-modal" class="modal-backdrop collapsed" role="dialog" aria-modal="true" aria-labelledby="preset-manager-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span id="preset-manager-title" class="modal-title">Manage Presets</span>
+        <button id="preset-manager-close-btn" type="button" class="btn-icon-action" title="Close">✕</button>
+      </div>
+      <div id="preset-manager-list" class="preset-manager-list"></div>
+      <div class="modal-footer">
+        <button id="preset-manager-done-btn" type="button" class="btn-secondary">Done</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

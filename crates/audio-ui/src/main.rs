@@ -91,6 +91,8 @@ fn main() {
             commands::apply_preset,
             commands::save_current_as_preset,
             commands::delete_preset,
+            commands::rename_preset,
+            commands::reorder_presets,
             commands::clear_active_preset,
             commands::set_endpoint_volume,
             commands::set_endpoint_mute,
