@@ -1,6 +1,7 @@
 mod app_settings;
 mod debounce;
 mod handlers;
+mod loopback_registry;
 mod state;
 mod status;
 mod watcher;
@@ -17,6 +18,7 @@ use audio_core::{
     PresetEngine, SingleInstanceGuard,
 };
 use handlers::handle_request;
+use loopback_registry::LoopbackRegistry;
 use state::DaemonState;
 use watcher::spawn_event_watcher;
 
@@ -92,7 +94,7 @@ pub fn run_daemon() {
     let app_settings_path = AppSettingsStore::path_beside_config(&config_path);
     let app_settings = AppSettingsStore::load(&app_settings_path);
     let mut applied_pids = HashSet::new();
-    let mut loopbacks = HashMap::new();
+    let mut loopbacks = LoopbackRegistry::new();
 
     if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
         for ep in eps {

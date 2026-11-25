@@ -99,9 +99,7 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
                 _session_guards = arm_session_watchers(&enumerator, &tx);
                 if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
                     if let Ok(mut guard) = state.lock() {
-                        guard
-                            .loopbacks
-                            .retain(|(_, ep_id), _| eps.iter().any(|e| e.id == *ep_id));
+                        guard.loopbacks.prune_disconnected(&eps);
                     }
                 }
                 if let Some(preset) = active_preset(&state) {

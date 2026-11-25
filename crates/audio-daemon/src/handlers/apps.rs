@@ -6,7 +6,8 @@ use std::time::Duration;
 use audio_core::ipc::IpcResponse;
 use audio_core::{log_error, log_info, log_warn, AppPolicyClient, AudioEnumerator, DataFlow, DeviceRole, LoopbackTee};
 
-use crate::app_settings::{ActiveLoopback, SecondaryOutputSetting};
+use crate::app_settings::SecondaryOutputSetting;
+use crate::loopback_registry::effective_primary_volume;
 use crate::state::DaemonState;
 use crate::status::{find_primary_session, is_pid_active};
 
@@ -81,27 +82,24 @@ pub(super) fn handle_start_loopback(
                 }
                 let primary_vol = primary.map(|(_, v)| v).unwrap_or(1.0);
                 let handle = LoopbackTee::start(pid, ep, vol).map_err(|e| e.to_string())?;
-                let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
-                handle.set_linear_gain(ratio.powi(2));
-                handle.set_mute(vol <= 0.0);
-                Ok(Some(handle))
+                Ok(Some((handle, primary_vol)))
             })
     };
 
     match res {
-        Ok(maybe_handle) => {
-            if let Some(handle) = maybe_handle {
+        Ok(maybe_started) => {
+            if let Some((handle, primary_vol)) = maybe_started {
                 log_info!(
                     "StartLoopback(pid={pid}, target={target_endpoint_id}, vol={vol:.2}) started"
                 );
                 if let Ok(mut guard) = state.lock() {
-                    guard.loopbacks.insert(
-                        (pid, target_endpoint_id.clone()),
-                        ActiveLoopback {
-                            handle,
-                            volume: vol,
-                            muted: vol <= 0.0,
-                        },
+                    guard.loopbacks.insert_started(
+                        pid,
+                        target_endpoint_id.clone(),
+                        handle,
+                        vol,
+                        false,
+                        primary_vol,
                     );
                 }
             } else {
@@ -214,28 +212,20 @@ pub(super) fn handle_set_app_output_volume(
     }
 
     let connected_eps: HashSet<String> = eps.iter().map(|e| e.id.clone()).collect();
-    guard
-        .loopbacks
-        .retain(|(_, ep_id), _| connected_eps.contains(ep_id));
+    guard.loopbacks.prune_disconnected(&eps);
     let connected_refs: HashSet<&str> = connected_eps.iter().map(String::as_str).collect();
 
     let prev_primary_vol = primary_vol;
     if endpoint_id == cur_primary {
         primary_vol = vol;
-    } else if let Some(lb) = guard.loopbacks.get_mut(&(pid, endpoint_id.to_string())) {
-        lb.volume = vol;
-        lb.muted = vol <= 0.0;
+    } else {
+        guard.loopbacks.set_volume(pid, endpoint_id, vol);
     }
 
-    let secondary_vols = connected_secondary_volumes(
+    let secondary_vols =
         guard
             .loopbacks
-            .iter()
-            .map(|((p, ep_id), lb)| (*p, ep_id.as_str(), lb.volume, lb.muted)),
-        pid,
-        &cur_primary,
-        &connected_refs,
-    );
+            .connected_secondaries_for_pid(pid, &cur_primary, &connected_refs);
 
     if finalize && primary_vol <= 0.0 && !secondary_vols.is_empty() {
         let mut best_id = cur_primary.clone();
@@ -264,22 +254,19 @@ pub(super) fn handle_set_app_output_volume(
             guard = state.lock().map_err(|e| e.to_string())?;
 
             if migrated_primary.as_deref() == Some(best_id.as_str()) {
-                guard.loopbacks.remove(&(pid, best_id.clone()));
+                guard.loopbacks.remove(pid, &best_id);
                 cur_primary = best_id;
                 primary_vol = best_vol;
 
                 if let Some(old_ep) = eps.iter().find(|e| e.id == old_primary) {
                     if let Ok(handle) = LoopbackTee::start(pid, old_ep, old_primary_vol) {
-                        let ratio = (old_primary_vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
-                        handle.set_linear_gain(ratio.powi(2));
-                        handle.set_mute(old_primary_vol <= 0.0);
-                        guard.loopbacks.insert(
-                            (pid, old_primary),
-                            ActiveLoopback {
-                                handle,
-                                volume: old_primary_vol,
-                                muted: old_primary_vol <= 0.0,
-                            },
+                        guard.loopbacks.insert_started(
+                            pid,
+                            old_primary,
+                            handle,
+                            old_primary_vol,
+                            false,
+                            primary_vol,
                         );
                     }
                 }
@@ -287,15 +274,10 @@ pub(super) fn handle_set_app_output_volume(
         }
     }
 
-    let has_audible_loopback = has_audible_connected_loopback(
+    let has_audible_loopback =
         guard
             .loopbacks
-            .iter()
-            .map(|((p, ep_id), lb)| (*p, ep_id.as_str(), lb.volume, lb.muted)),
-        pid,
-        &cur_primary,
-        &connected_refs,
-    );
+            .has_audible_for_pid(pid, &cur_primary, &connected_refs);
     let primary_eff = effective_primary_volume(primary_vol, has_audible_loopback);
 
     if has_audible_loopback && endpoint_id == cur_primary && primary_eff < prev_primary_vol {
@@ -304,23 +286,14 @@ pub(super) fn handle_set_app_output_volume(
         apply_primary_volume(&eps, &cur_primary, pid, primary_eff);
         if finalize {
             thread::sleep(Duration::from_millis(150));
-            apply_loopback_ratios(&mut guard.loopbacks, pid, primary_eff);
+            guard.loopbacks.apply_ratios_for_pid(pid, primary_eff);
         }
     } else {
         apply_primary_volume(&eps, &cur_primary, pid, primary_eff);
-        apply_loopback_ratios(&mut guard.loopbacks, pid, primary_eff);
+        guard.loopbacks.apply_ratios_for_pid(pid, primary_eff);
     }
 
-    let updated_secs: Vec<SecondaryOutputSetting> = guard
-        .loopbacks
-        .iter()
-        .filter(|((p, _), _)| *p == pid)
-        .map(|((_, ep_id), lb)| SecondaryOutputSetting {
-            endpoint_id: ep_id.clone(),
-            volume: lb.volume,
-            muted: lb.muted,
-        })
-        .collect();
+    let updated_secs: Vec<SecondaryOutputSetting> = guard.loopbacks.secondary_settings_for_pid(pid);
     let path = guard.app_settings_path.clone();
     let ep_key = endpoint_id.to_string();
     guard.app_settings.upsert_for_pid(pid, &path, |s| {
@@ -346,44 +319,6 @@ pub(super) fn handle_set_app_output_volume(
 }
 
 
-fn has_audible_connected_loopback<'a>(
-    loopbacks: impl IntoIterator<Item = (u32, &'a str, f32, bool)>,
-    pid: u32,
-    cur_primary: &str,
-    connected_endpoints: &HashSet<&str>,
-) -> bool {
-    loopbacks.into_iter().any(|(p, ep_id, vol, muted)| {
-        p == pid
-            && ep_id != cur_primary
-            && vol > 0.0
-            && !muted
-            && connected_endpoints.contains(ep_id)
-    })
-}
-
-fn connected_secondary_volumes<'a>(
-    loopbacks: impl IntoIterator<Item = (u32, &'a str, f32, bool)>,
-    pid: u32,
-    cur_primary: &str,
-    connected_endpoints: &HashSet<&str>,
-) -> Vec<(String, f32)> {
-    loopbacks
-        .into_iter()
-        .filter(|(p, ep_id, _, _)| {
-            *p == pid && *ep_id != cur_primary && connected_endpoints.contains(ep_id)
-        })
-        .map(|(_, ep_id, vol, _)| (ep_id.to_string(), vol))
-        .collect()
-}
-
-fn effective_primary_volume(primary_vol: f32, has_audible_loopback: bool) -> f32 {
-    if has_audible_loopback && primary_vol < 0.05 {
-        0.05
-    } else {
-        primary_vol
-    }
-}
-
 fn apply_primary_volume(
     eps: &[audio_core::AudioEndpoint],
     cur_primary: &str,
@@ -399,79 +334,5 @@ fn apply_primary_volume(
                 }
             }
         }
-    }
-}
-
-fn apply_loopback_ratios(
-    loopbacks: &mut std::collections::HashMap<(u32, String), ActiveLoopback>,
-    pid: u32,
-    primary_eff: f32,
-) {
-    for ((p, _), lb) in loopbacks.iter_mut() {
-        if *p == pid {
-            let ratio = if primary_eff > 0.0 {
-                (lb.volume / primary_eff).clamp(0.0, 4.0)
-            } else {
-                0.0
-            };
-            lb.handle.set_linear_gain(ratio.powi(2));
-            lb.handle.set_mute(lb.volume <= 0.0);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashSet;
-
-    #[test]
-    fn disconnected_loopbacks_do_not_trigger_primary_floor() {
-        let connected: HashSet<&str> = ["ep-primary"].into_iter().collect();
-        let loopbacks = [
-            (42u32, "ep-disconnected", 0.6f32, false),
-            (99u32, "ep-primary", 0.5f32, false),
-        ];
-
-        assert!(!has_audible_connected_loopback(
-            loopbacks.iter().copied(),
-            42,
-            "ep-primary",
-            &connected,
-        ));
-        assert_eq!(effective_primary_volume(0.0, false), 0.0);
-    }
-
-    #[test]
-    fn connected_audible_loopback_enforces_five_percent_floor() {
-        let connected: HashSet<&str> = ["ep-primary", "ep-secondary"].into_iter().collect();
-        let loopbacks = [
-            (42u32, "ep-secondary", 0.5f32, false),
-            (42u32, "ep-muted", 0.8f32, true),
-            (42u32, "ep-zero", 0.0f32, false),
-        ];
-
-        assert!(has_audible_connected_loopback(
-            loopbacks.iter().copied(),
-            42,
-            "ep-primary",
-            &connected,
-        ));
-        assert_eq!(effective_primary_volume(0.0, true), 0.05);
-        assert_eq!(effective_primary_volume(0.25, true), 0.25);
-    }
-
-    #[test]
-    fn connected_secondary_volumes_excludes_disconnected_and_primary() {
-        let connected: HashSet<&str> = ["ep-primary", "ep-secondary"].into_iter().collect();
-        let loopbacks = [
-            (42u32, "ep-primary", 0.9f32, false),
-            (42u32, "ep-disconnected", 0.8f32, false),
-            (42u32, "ep-secondary", 0.4f32, false),
-            (77u32, "ep-secondary", 0.7f32, false),
-        ];
-
-        let secs = connected_secondary_volumes(loopbacks.iter().copied(), 42, "ep-primary", &connected);
-        assert_eq!(secs, vec![("ep-secondary".to_string(), 0.4)]);
     }
 }
