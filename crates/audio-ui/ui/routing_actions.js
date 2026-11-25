@@ -126,6 +126,14 @@ export async function makePrimaryOutput(ctx, onRefresh) {
   const { session, endpoint, isLoopback, activeLoopbacks } = ctx;
   const appId = appIdFor(session);
   const appKey = session.app_key || null;
+  const oldPrimaryId = session.endpoint_id;
+  const oldPrimaryVol = session.volume ?? 1.0;
+  const keepOldPrimaryAsSecondary =
+    Boolean(oldPrimaryId) &&
+    oldPrimaryId !== endpoint.id &&
+    !session.muted &&
+    !explicitlyUncheckedIds.has(appId) &&
+    oldPrimaryVol > 0;
   const lb = activeLoopbacks.find((x) => x.target_endpoint_id === endpoint.id);
   const targetVol = lb
     ? lb.volume
@@ -148,6 +156,8 @@ export async function makePrimaryOutput(ctx, onRefresh) {
       appKey,
       targetEndpointId: endpoint.id,
     });
+  } else if (keepOldPrimaryAsSecondary) {
+    await new Promise((r) => setTimeout(r, 250));
   }
   await invoke("set_session_mute", {
     endpointId: endpoint.id,
@@ -162,6 +172,15 @@ export async function makePrimaryOutput(ctx, onRefresh) {
     volume: targetVol,
     finalize: true,
   });
+  if (keepOldPrimaryAsSecondary) {
+    rememberedOutputVolumes.set(`${appId}:${oldPrimaryId}`, oldPrimaryVol);
+    await invoke("start_loopback", {
+      pid: session.pid,
+      appKey,
+      targetEndpointId: oldPrimaryId,
+      volume: oldPrimaryVol,
+    });
+  }
   await onRefresh(true);
 }
 
