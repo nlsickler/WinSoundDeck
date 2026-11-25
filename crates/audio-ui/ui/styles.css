@@ -856,17 +856,68 @@ button:hover {
 }
 
 .filter-fab-btn.has-active {
-  color: #a5b4fc;
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.22);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.28), 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.filter-fab-btn.has-search svg polygon {
+  fill: currentColor;
 }
 
 .filter-fab-dot {
   position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 7px;
-  height: 7px;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-hover);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.filter-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.filter-search-input {
+  width: 100%;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 24px 5px 8px;
+  font-size: 12px;
+}
+
+.filter-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.filter-search-clear {
+  position: absolute;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.filter-search-clear:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .filter-popover {

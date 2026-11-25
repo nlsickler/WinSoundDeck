@@ -5,6 +5,7 @@ import {
   applyAppIcon,
   groupSessionsByApp,
   loopbacksForSession,
+  matchesAppSearch,
   sortEndpointsByRoleAndName,
   stateBadgeFor,
 } from "./app_utils.js";
@@ -398,7 +399,8 @@ export function renderAppsTab(
   loopbacks,
   includeDisconnected,
   appIconCache,
-  onRefresh
+  onRefresh,
+  appSearchQuery = ""
 ) {
   const renderEndpoints = sortEndpointsByRoleAndName(
     endpoints.filter((e) => e.flow === "Render")
@@ -423,7 +425,7 @@ export function renderAppsTab(
     ...playing,
     ...(showIdleApps ? idle : []),
     ...(showOfflineApps ? offline : []),
-  ];
+  ].filter((s) => matchesAppSearch(s, appSearchQuery));
 
   renderAppsList(
     document.getElementById("apps-active-list"),

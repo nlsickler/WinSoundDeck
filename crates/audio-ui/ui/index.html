@@ -128,6 +128,10 @@
   <div id="filter-fab-wrap" class="filter-fab-wrap">
     <div id="filter-popover" class="filter-popover collapsed" role="dialog" aria-label="Filters">
       <div class="filter-popover-title">Filters</div>
+      <div class="filter-search-wrap" data-filter-tabs="apps devices">
+        <input id="filter-app-search" class="filter-search-input" type="text" placeholder="Filter apps..." autocomplete="off" />
+        <button id="filter-app-search-clear" class="filter-search-clear collapsed" type="button" title="Clear search">✕</button>
+      </div>
       <label class="filter-option" data-filter-tabs="apps">
         <input id="filter-apps-idle-cb" type="checkbox" />
         <span>Idle Apps <span id="filter-apps-idle-count" class="tab-count">0</span></span>

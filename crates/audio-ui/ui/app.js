@@ -18,6 +18,7 @@ const { invoke } = window.__TAURI__.core;
 
 let includeDisconnected = false;
 let currentTab = "apps";
+let appSearchQuery = "";
 const appIconCache = new Map();
 const iconFetchInFlight = new Set();
 
@@ -43,11 +44,19 @@ function updateFilterUi() {
   const discCb = document.getElementById("filter-disconnected-cb");
   if (discCb) discCb.checked = includeDisconnected;
 
-  let anyActive = includeDisconnected;
+  const hasSearch =
+    Boolean(appSearchQuery.trim()) && (currentTab === "apps" || currentTab === "devices");
+  let anyActive = includeDisconnected || hasSearch;
   if (currentTab === "apps") anyActive = anyActive || hasActiveAppsFilters();
   if (currentTab === "devices") anyActive = anyActive || hasActiveDevicesFilters();
   if (dot) dot.classList.toggle("collapsed", !anyActive);
   fabBtn.classList.toggle("has-active", anyActive);
+  fabBtn.classList.toggle("has-search", hasSearch);
+  fabBtn.title = hasSearch
+    ? `Filters active (search: "${appSearchQuery.trim()}")`
+    : anyActive
+      ? "Filters active"
+      : "Filters";
 }
 
 function setupFilterMenu() {
@@ -55,6 +64,8 @@ function setupFilterMenu() {
   const fabBtn = document.getElementById("filter-fab-btn");
   const popover = document.getElementById("filter-popover");
   const discCb = document.getElementById("filter-disconnected-cb");
+  const searchInput = document.getElementById("filter-app-search");
+  const searchClear = document.getElementById("filter-app-search-clear");
 
   fabBtn.onclick = (e) => {
     e.stopPropagation();
@@ -81,6 +92,27 @@ function setupFilterMenu() {
     discCb.onchange = async () => {
       await invoke("set_include_disconnected", { include: discCb.checked });
       await refreshAll(true);
+    };
+  }
+
+  if (searchInput) {
+    searchInput.oninput = () => {
+      appSearchQuery = searchInput.value;
+      if (searchClear) searchClear.classList.toggle("collapsed", !appSearchQuery);
+      updateFilterUi();
+      refreshAll(true);
+    };
+  }
+
+  if (searchClear && searchInput) {
+    searchClear.onclick = (e) => {
+      e.stopPropagation();
+      searchInput.value = "";
+      appSearchQuery = "";
+      searchClear.classList.add("collapsed");
+      updateFilterUi();
+      searchInput.focus();
+      refreshAll(true);
     };
   }
 }
@@ -139,7 +171,8 @@ async function refreshAll(force = false) {
       status.loopbacks || [],
       includeDisconnected,
       appIconCache,
-      refreshAll
+      refreshAll,
+      appSearchQuery
     );
     renderDevicesTab(
       status.endpoints,
@@ -147,7 +180,8 @@ async function refreshAll(force = false) {
       status.loopbacks || [],
       includeDisconnected,
       appIconCache,
-      refreshAll
+      refreshAll,
+      appSearchQuery
     );
     ensureAppIcons(appSessions);
     renderSystemTab(status.endpoints, includeDisconnected, refreshAll);

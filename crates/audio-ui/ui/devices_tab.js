@@ -10,6 +10,7 @@ import {
   appIdFor,
   groupSessionsByApp,
   loopbacksForSession,
+  matchesAppSearch,
   sortEndpointsByRoleAndName,
   stateBadgeFor,
 } from "./app_utils.js";
@@ -189,7 +190,8 @@ export function renderDevicesTab(
   loopbacks,
   includeDisconnected,
   appIconCache,
-  onRefresh
+  onRefresh,
+  appSearchQuery = ""
 ) {
   const renderEndpoints = sortEndpointsByRoleAndName(
     endpoints.filter(
@@ -225,7 +227,7 @@ export function renderDevicesTab(
     ...playingGroups,
     ...(showIdleInDevices ? idleGroups : []),
     ...(showOfflineInDevices ? offlineGroups : []),
-  ];
+  ].filter((g) => matchesAppSearch(g.primary, appSearchQuery));
 
   syncKeyedList(
     document.getElementById("devices-list"),

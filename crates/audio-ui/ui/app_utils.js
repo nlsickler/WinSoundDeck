@@ -101,3 +101,10 @@ export function loopbacksForSession(loopbacks, s) {
     s.pid > 0 ? lb.pid === s.pid : s.app_key && lb.app_key === s.app_key
   );
 }
+
+export function matchesAppSearch(s, query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return true;
+  const fields = [s.display_name, s.root_exe_name, s.exe_name];
+  return fields.some((f) => f && f.toLowerCase().includes(q));
+}
