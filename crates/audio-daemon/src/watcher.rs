@@ -85,10 +85,11 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
                         guard.default_endpoints.insert((flow, role), device_id);
                     }
                 }
-                Ok(AudioEvent::DeviceStateChanged { .. }) | Ok(AudioEvent::DeviceAdded { .. }) => {
+                Ok(AudioEvent::DeviceStateChanged { .. })
+                | Ok(AudioEvent::DeviceAdded { .. })
+                | Ok(AudioEvent::DeviceRemoved { .. }) => {
                     debouncer.trigger(Instant::now());
                 }
-                Ok(_) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -96,6 +97,13 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
             if debouncer.take_if_due(Instant::now()) {
                 _session_guards.clear();
                 _session_guards = arm_session_watchers(&enumerator, &tx);
+                if let Ok(eps) = enumerator.list_active_endpoints(DataFlow::Render) {
+                    if let Ok(mut guard) = state.lock() {
+                        guard
+                            .loopbacks
+                            .retain(|(_, ep_id), _| eps.iter().any(|e| e.id == *ep_id));
+                    }
+                }
                 if let Some(preset) = active_preset(&state) {
                     let _ = PresetEngine::new(&enumerator).apply_preset(&preset);
                 }

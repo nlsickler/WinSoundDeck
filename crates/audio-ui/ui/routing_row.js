@@ -364,6 +364,7 @@ export function buildRoutingRow(onRefresh, { vertical = false } = {}) {
   }
 
   slider.onpointerdown = () => setSliderDragging(true);
+  slider.onpointerup = () => setSliderDragging(false);
   slider.onpointercancel = () => setSliderDragging(false);
   slider.oninput = async (e) => {
     const ctx = row._ctx;
