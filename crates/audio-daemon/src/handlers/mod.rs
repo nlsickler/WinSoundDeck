@@ -1,4 +1,5 @@
-mod apps;
+mod app_routing;
+mod app_volume;
 mod presets;
 
 use std::sync::{Arc, Mutex};
@@ -8,7 +9,8 @@ use audio_core::{
     log_debug, log_error, log_info, log_warn, AudioEnumerator, DataFlow, DeviceRole, PolicyClient,
 };
 
-use self::apps::{handle_route_app, handle_set_app_output_volume, handle_start_loopback};
+use self::app_routing::{handle_route_app, handle_start_loopback};
+use self::app_volume::handle_set_app_output_volume;
 use self::presets::{handle_apply_preset, handle_save_current_as_preset};
 use crate::state::DaemonState;
 use crate::status::build_daemon_status;

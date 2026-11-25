@@ -4,12 +4,18 @@ use std::thread;
 use std::time::Duration;
 
 use audio_core::ipc::IpcResponse;
-use audio_core::{log_error, log_info, log_warn, AppPolicyClient, AudioEnumerator, DataFlow, DeviceRole, LoopbackTee};
+use audio_core::{
+    log_error, log_info, log_warn, AppPolicyClient, AudioEndpoint, AudioEnumerator, DataFlow,
+    DeviceRole, LoopbackTee,
+};
 
-use crate::app_settings::SecondaryOutputSetting;
-use crate::loopback_registry::effective_primary_volume;
+use crate::app_settings::{AppPersistentSettings, SecondaryOutputSetting};
 use crate::state::DaemonState;
 use crate::status::{find_primary_session, is_pid_active};
+
+use super::volume_plan::{
+    plan_volume_application, select_promotion_candidate, LoopbackRatioTiming,
+};
 
 pub(super) fn handle_route_app(
     enumerator: &AudioEnumerator,
@@ -153,31 +159,15 @@ pub(super) fn handle_set_app_output_volume(
     let vol = volume.clamp(0.0, 1.0);
     if pid == 0 {
         let mut guard = state.lock().map_err(|e| e.to_string())?;
-        let ep_key = endpoint_id.to_string();
         let path = guard.app_settings_path.clone();
         guard
             .app_settings
             .upsert_by_key_or_pid(pid, app_key, &path, |s| {
-                s.output_volumes.insert(ep_key.clone(), vol);
-                let is_primary = s.primary_endpoint_id.as_deref() == Some(ep_key.as_str())
-                    || s.primary_endpoint_id.is_none();
-                if is_primary {
-                    if s.primary_endpoint_id.is_none() {
-                        s.primary_endpoint_id = Some(ep_key.clone());
-                    }
-                    s.volume = Some(vol);
-                    s.muted = Some(vol <= 0.0);
-                } else if let Some(sec) = s
-                    .secondary_outputs
-                    .iter_mut()
-                    .find(|o| o.endpoint_id == ep_key)
-                {
-                    sec.volume = vol;
-                    sec.muted = vol <= 0.0;
-                }
+                update_inactive_output_settings(s, endpoint_id, endpoint_id, vol);
             });
         return Ok(());
     }
+
     let eps = enumerator
         .list_active_endpoints(DataFlow::Render)
         .map_err(|e| e.to_string())?;
@@ -189,24 +179,9 @@ pub(super) fn handle_set_app_output_volume(
     let mut guard = state.lock().map_err(|e| e.to_string())?;
 
     if !is_pid_active(&eps, pid) {
-        let ep_key = endpoint_id.to_string();
         let path = guard.app_settings_path.clone();
         guard.app_settings.upsert_for_pid(pid, &path, |s| {
-            s.output_volumes.insert(ep_key.clone(), vol);
-            let primary_id = s
-                .primary_endpoint_id
-                .get_or_insert_with(|| cur_primary.clone());
-            if *primary_id == ep_key {
-                s.volume = Some(vol);
-                s.muted = Some(vol <= 0.0);
-            } else if let Some(sec) = s
-                .secondary_outputs
-                .iter_mut()
-                .find(|o| o.endpoint_id == ep_key)
-            {
-                sec.volume = vol;
-                sec.muted = vol <= 0.0;
-            }
+            update_inactive_output_settings(s, endpoint_id, &cur_primary, vol);
         });
         return Ok(());
     }
@@ -226,51 +201,24 @@ pub(super) fn handle_set_app_output_volume(
         guard
             .loopbacks
             .connected_secondaries_for_pid(pid, &cur_primary, &connected_refs);
-
-    if finalize && primary_vol <= 0.0 && !secondary_vols.is_empty() {
-        let mut best_id = cur_primary.clone();
-        let mut best_vol = primary_vol;
-        for (ep_id, v) in &secondary_vols {
-            if *v > best_vol + 0.005 {
-                best_vol = *v;
-                best_id = ep_id.clone();
-            }
-        }
-        if best_id != cur_primary {
-            let old_primary = cur_primary.clone();
-            let old_primary_vol = primary_vol;
-
-            if let Ok(ap) = AppPolicyClient::new() {
-                let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, &best_id);
-                let _ =
-                    ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, &best_id);
-            }
-            drop(guard);
-            thread::sleep(Duration::from_millis(250));
-            let migrated_primary = enumerator
-                .list_active_endpoints(DataFlow::Render)
-                .ok()
-                .and_then(|new_eps| find_primary_session(&new_eps, pid).map(|(id, _)| id));
-            guard = state.lock().map_err(|e| e.to_string())?;
-
-            if migrated_primary.as_deref() == Some(best_id.as_str()) {
-                guard.loopbacks.remove(pid, &best_id);
-                cur_primary = best_id;
-                primary_vol = best_vol;
-
-                if let Some(old_ep) = eps.iter().find(|e| e.id == old_primary) {
-                    if let Ok(handle) = LoopbackTee::start(pid, old_ep, old_primary_vol) {
-                        guard.loopbacks.insert_started(
-                            pid,
-                            old_primary,
-                            handle,
-                            old_primary_vol,
-                            false,
-                            primary_vol,
-                        );
-                    }
-                }
-            }
+    if let Some((best_id, best_vol)) =
+        select_promotion_candidate(&cur_primary, primary_vol, &secondary_vols, finalize)
+    {
+        let (next_guard, promoted) = try_promote_secondary(
+            enumerator,
+            state,
+            guard,
+            &eps,
+            pid,
+            &cur_primary,
+            primary_vol,
+            &best_id,
+            best_vol,
+        )?;
+        guard = next_guard;
+        if promoted {
+            cur_primary = best_id;
+            primary_vol = best_vol;
         }
     }
 
@@ -278,26 +226,120 @@ pub(super) fn handle_set_app_output_volume(
         guard
             .loopbacks
             .has_audible_for_pid(pid, &cur_primary, &connected_refs);
-    let primary_eff = effective_primary_volume(primary_vol, has_audible_loopback);
+    let plan = plan_volume_application(
+        primary_vol,
+        prev_primary_vol,
+        endpoint_id == cur_primary,
+        has_audible_loopback,
+        finalize,
+    );
 
-    if has_audible_loopback && endpoint_id == cur_primary && primary_eff < prev_primary_vol {
-        // Apply ISimpleAudioVolume immediately; never raise loopback gain mid-drag,
-        // and on finalize wait 100ms for Windows' mix buffer to flush before catching up.
-        apply_primary_volume(&eps, &cur_primary, pid, primary_eff);
-        if finalize {
-            thread::sleep(Duration::from_millis(150));
-            guard.loopbacks.apply_ratios_for_pid(pid, primary_eff);
+    apply_primary_volume(&eps, &cur_primary, pid, plan.primary_eff);
+    match plan.ratio_timing {
+        LoopbackRatioTiming::Immediate => {
+            guard.loopbacks.apply_ratios_for_pid(pid, plan.primary_eff);
         }
-    } else {
-        apply_primary_volume(&eps, &cur_primary, pid, primary_eff);
-        guard.loopbacks.apply_ratios_for_pid(pid, primary_eff);
+        LoopbackRatioTiming::DelayedAfterFlush => {
+            let expected_gen = guard.loopbacks.generation();
+            let state_bg = Arc::clone(state);
+            let primary_eff = plan.primary_eff;
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(150));
+                if let Ok(mut g) = state_bg.lock() {
+                    if !g.shutdown {
+                        g.loopbacks
+                            .apply_ratios_for_pid_if_gen(pid, primary_eff, expected_gen);
+                    }
+                }
+            });
+        }
+        LoopbackRatioTiming::SkipMidDrag => {}
     }
 
-    let updated_secs: Vec<SecondaryOutputSetting> = guard.loopbacks.secondary_settings_for_pid(pid);
+    persist_active_output_settings(&mut guard, pid, &cur_primary, primary_vol, endpoint_id, vol);
+    Ok(())
+}
+
+fn update_inactive_output_settings(
+    s: &mut AppPersistentSettings,
+    ep_key: &str,
+    default_primary: &str,
+    vol: f32,
+) {
+    s.output_volumes.insert(ep_key.to_string(), vol);
+    let primary_id = s
+        .primary_endpoint_id
+        .get_or_insert_with(|| default_primary.to_string());
+    if primary_id == ep_key {
+        s.volume = Some(vol);
+        s.muted = Some(vol <= 0.0);
+    } else if let Some(sec) = s
+        .secondary_outputs
+        .iter_mut()
+        .find(|o| o.endpoint_id == ep_key)
+    {
+        sec.volume = vol;
+        sec.muted = vol <= 0.0;
+    }
+}
+
+fn try_promote_secondary<'a>(
+    enumerator: &AudioEnumerator,
+    state: &'a Arc<Mutex<DaemonState>>,
+    mut guard: std::sync::MutexGuard<'a, DaemonState>,
+    eps: &[AudioEndpoint],
+    pid: u32,
+    old_primary: &str,
+    old_primary_vol: f32,
+    best_id: &str,
+    best_vol: f32,
+) -> Result<(std::sync::MutexGuard<'a, DaemonState>, bool), String> {
+    if let Ok(ap) = AppPolicyClient::new() {
+        let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Console, best_id);
+        let _ = ap.set_app_endpoint(pid, DataFlow::Render, DeviceRole::Multimedia, best_id);
+    }
+    drop(guard);
+    thread::sleep(Duration::from_millis(250));
+    let migrated_primary = enumerator
+        .list_active_endpoints(DataFlow::Render)
+        .ok()
+        .and_then(|new_eps| find_primary_session(&new_eps, pid).map(|(id, _)| id));
+    guard = state.lock().map_err(|e| e.to_string())?;
+
+    if migrated_primary.as_deref() != Some(best_id) {
+        return Ok((guard, false));
+    }
+
+    guard.loopbacks.remove(pid, best_id);
+    if let Some(old_ep) = eps.iter().find(|e| e.id == old_primary) {
+        if let Ok(handle) = LoopbackTee::start(pid, old_ep, old_primary_vol) {
+            guard.loopbacks.insert_started(
+                pid,
+                old_primary.to_string(),
+                handle,
+                old_primary_vol,
+                false,
+                best_vol,
+            );
+        }
+    }
+    Ok((guard, true))
+}
+
+fn persist_active_output_settings(
+    guard: &mut DaemonState,
+    pid: u32,
+    cur_primary: &str,
+    primary_vol: f32,
+    endpoint_id: &str,
+    vol: f32,
+) {
+    let updated_secs = guard.loopbacks.secondary_settings_for_pid(pid);
     let path = guard.app_settings_path.clone();
     let ep_key = endpoint_id.to_string();
+    let primary_owned = cur_primary.to_string();
     guard.app_settings.upsert_for_pid(pid, &path, |s| {
-        s.primary_endpoint_id = Some(cur_primary);
+        s.primary_endpoint_id = Some(primary_owned);
         s.volume = Some(primary_vol);
         s.muted = Some(primary_vol <= 0.0);
         s.output_volumes.insert(ep_key.clone(), vol);
@@ -314,8 +356,6 @@ pub(super) fn handle_set_app_output_volume(
         }
         s.secondary_outputs = merged;
     });
-
-    Ok(())
 }
 
 
