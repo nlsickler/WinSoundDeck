@@ -59,12 +59,20 @@ pub fn spawn_event_watcher(state: Arc<Mutex<DaemonState>>) -> thread::JoinHandle
                 }) => {
                     if let Ok(mut guard) = state.lock() {
                         let DaemonState {
-                            ref app_settings,
+                            ref mut app_settings,
+                            ref app_settings_path,
                             ref mut applied_pids,
                             ref mut loopbacks,
                             ..
                         } = *guard;
-                        app_settings.apply_to_pid(&enumerator, pid, applied_pids, loopbacks);
+                        app_settings.apply_to_pid(
+                            &enumerator,
+                            pid,
+                            Some(root_exe_name.as_str()),
+                            app_settings_path,
+                            applied_pids,
+                            loopbacks,
+                        );
                     }
                     if let Some(preset) = active_preset(&state) {
                         let _ = PresetEngine::new(&enumerator).handle_session_created(

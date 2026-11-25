@@ -154,6 +154,9 @@ impl AppSettingsStore {
             if s.pid == 0 || s.app_key.is_empty() {
                 continue;
             }
+            if self.migrate_orphaned_pin_if_needed(&s.app_key, Some(&s.root_exe_name), path) {
+                save_needed = true;
+            }
             let entry = self.apps.entry(s.app_key.clone()).or_default();
             let mut changed = false;
             if !s.display_name.is_empty()
@@ -240,11 +243,62 @@ impl AppSettingsStore {
         }
     }
 
-    /// Applies saved per-app settings to `pid` (if present in `self.apps` and not yet applied).
+    /// Migrates an orphaned pinned entry (same `root_exe_name`, old `.exe` missing on disk)
+    /// to `new_app_key` when a new version of an auto-updating app spawns.
+    pub fn migrate_orphaned_pin_if_needed(
+        &mut self,
+        new_app_key: &str,
+        root_exe_name: Option<&str>,
+        path: &Path,
+    ) -> bool {
+        if new_app_key.is_empty() || self.apps.contains_key(new_app_key) {
+            return false;
+        }
+        let target_root = root_exe_name
+            .filter(|r| !r.is_empty())
+            .or_else(|| Path::new(new_app_key).file_name().and_then(|n| n.to_str()))
+            .map(str::to_ascii_lowercase);
+        let Some(target_root) = target_root else {
+            return false;
+        };
+
+        let old_key = self
+            .apps
+            .iter()
+            .find(|(old_key, cfg)| {
+                if !cfg.pinned || old_key.as_str() == new_app_key {
+                    return false;
+                }
+                let candidate_root = cfg
+                    .root_exe_name
+                    .as_deref()
+                    .filter(|r| !r.is_empty())
+                    .or_else(|| Path::new(old_key.as_str()).file_name().and_then(|n| n.to_str()))
+                    .map(str::to_ascii_lowercase);
+                candidate_root.as_deref() == Some(target_root.as_str())
+                    && !Path::new(old_key.as_str()).is_file()
+            })
+            .map(|(k, _)| k.clone());
+
+        let Some(old_key) = old_key else {
+            return false;
+        };
+        if let Some(migrated) = self.apps.remove(&old_key) {
+            self.apps.insert(new_app_key.to_string(), migrated);
+            self.save(path);
+            return true;
+        }
+        false
+    }
+
+    /// Applies saved per-app settings to `pid` (if present in `self.apps` and not yet applied),
+    /// migrating any orphaned pinned entry for an updated executable path first.
     pub fn apply_to_pid(
-        &self,
+        &mut self,
         enumerator: &AudioEnumerator,
         pid: u32,
+        root_exe_name: Option<&str>,
+        path: &Path,
         applied_pids: &mut HashSet<u32>,
         loopbacks: &mut LoopbackRegistry,
     ) {
@@ -254,6 +308,7 @@ impl AppSettingsStore {
         let Some(key) = Self::key_for_pid(pid) else {
             return;
         };
+        self.migrate_orphaned_pin_if_needed(&key, root_exe_name, path);
         let Some(settings) = self.apps.get(&key) else {
             return;
         };
@@ -477,6 +532,127 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("ep-dock"));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn migrate_orphaned_pin_moves_settings_when_old_exe_missing() {
+        let path = temp_settings_path("migrate_missing");
+        let mut store = AppSettingsStore::default();
+        let old_key = r"C:\Users\test\AppData\Local\Discord\app-1.0.9001\Discord.exe";
+        let new_key = r"C:\Users\test\AppData\Local\Discord\app-1.0.9002\Discord.exe";
+
+        let mut output_volumes = HashMap::new();
+        output_volumes.insert("ep-headset".to_string(), 0.45);
+        output_volumes.insert("ep-speakers".to_string(), 0.25);
+
+        store.apps.insert(
+            old_key.to_string(),
+            AppPersistentSettings {
+                pinned: true,
+                display_name: Some("Discord".to_string()),
+                root_exe_name: Some("Discord.exe".to_string()),
+                primary_endpoint_id: Some("ep-headset".to_string()),
+                volume: Some(0.45),
+                muted: Some(false),
+                secondary_outputs: vec![SecondaryOutputSetting {
+                    endpoint_id: "ep-speakers".to_string(),
+                    volume: 0.25,
+                    muted: false,
+                }],
+                output_volumes,
+            },
+        );
+
+        let migrated =
+            store.migrate_orphaned_pin_if_needed(new_key, Some("discord.exe"), &path);
+        assert!(migrated);
+        assert!(!store.apps.contains_key(old_key));
+        let moved = store.apps.get(new_key).expect("migrated entry");
+        assert!(moved.pinned);
+        assert_eq!(moved.primary_endpoint_id.as_deref(), Some("ep-headset"));
+        assert_eq!(moved.volume, Some(0.45));
+        assert_eq!(moved.muted, Some(false));
+        assert_eq!(moved.secondary_outputs.len(), 1);
+        assert_eq!(moved.output_volumes.get("ep-speakers"), Some(&0.25));
+
+        let reloaded = AppSettingsStore::load(&path);
+        assert!(!reloaded.apps.contains_key(old_key));
+        assert!(reloaded.apps.get(new_key).is_some_and(|s| s.pinned));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn migrate_orphaned_pin_keeps_both_when_old_exe_still_exists() {
+        let path = temp_settings_path("migrate_exists");
+        let dir = path.parent().unwrap();
+        fs::create_dir_all(dir).unwrap();
+        let existing_old_exe = dir.join("Discord.exe");
+        fs::write(&existing_old_exe, b"stub").unwrap();
+        let old_key = existing_old_exe.to_string_lossy().to_string();
+        let new_key = r"C:\Other\Discord.exe";
+
+        let mut store = AppSettingsStore::default();
+        store.apps.insert(
+            old_key.clone(),
+            AppPersistentSettings {
+                pinned: true,
+                root_exe_name: Some("Discord.exe".to_string()),
+                volume: Some(0.5),
+                ..Default::default()
+            },
+        );
+
+        let migrated =
+            store.migrate_orphaned_pin_if_needed(new_key, Some("Discord.exe"), &path);
+        assert!(!migrated);
+        assert!(store.apps.contains_key(&old_key));
+        assert!(!store.apps.contains_key(new_key));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn migrate_orphaned_pin_ignores_unpinned_or_already_present_entries() {
+        let path = temp_settings_path("migrate_ignore");
+        let mut store = AppSettingsStore::default();
+        let old_unpinned = r"C:\Missing\v1\App.exe";
+        let new_key = r"C:\Missing\v2\App.exe";
+
+        store.apps.insert(
+            old_unpinned.to_string(),
+            AppPersistentSettings {
+                pinned: false,
+                root_exe_name: Some("App.exe".to_string()),
+                volume: Some(0.3),
+                ..Default::default()
+            },
+        );
+        assert!(!store.migrate_orphaned_pin_if_needed(new_key, Some("App.exe"), &path));
+
+        store.apps.insert(
+            old_unpinned.to_string(),
+            AppPersistentSettings {
+                pinned: true,
+                root_exe_name: Some("App.exe".to_string()),
+                volume: Some(0.3),
+                ..Default::default()
+            },
+        );
+        store.apps.insert(
+            new_key.to_string(),
+            AppPersistentSettings {
+                pinned: true,
+                root_exe_name: Some("App.exe".to_string()),
+                volume: Some(0.9),
+                ..Default::default()
+            },
+        );
+        assert!(!store.migrate_orphaned_pin_if_needed(new_key, Some("App.exe"), &path));
+        assert_eq!(store.apps[new_key].volume, Some(0.9));
+        assert!(store.apps.contains_key(old_unpinned));
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

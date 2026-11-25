@@ -92,7 +92,7 @@ pub fn run_daemon() {
     }
 
     let app_settings_path = AppSettingsStore::path_beside_config(&config_path);
-    let app_settings = AppSettingsStore::load(&app_settings_path);
+    let mut app_settings = AppSettingsStore::load(&app_settings_path);
     let mut applied_pids = HashSet::new();
     let mut loopbacks = LoopbackRegistry::new();
 
@@ -103,6 +103,8 @@ pub fn run_daemon() {
                     app_settings.apply_to_pid(
                         &enumerator,
                         s.pid,
+                        None,
+                        &app_settings_path,
                         &mut applied_pids,
                         &mut loopbacks,
                     );
