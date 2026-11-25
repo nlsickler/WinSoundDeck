@@ -121,6 +121,13 @@ export function createMeterSlider() {
   return { wrap, slider, volFill, meterFill };
 }
 
+export function computeWheelSliderValue(currentPct, deltaY, shiftKey = false) {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return currentPct;
+  const step = shiftKey ? 2 : 5;
+  const delta = deltaY < 0 ? step : -step;
+  return Math.max(0, Math.min(100, Math.round(currentPct) + delta));
+}
+
 export function bindMeterSlider({
   slider,
   volFill,
@@ -130,16 +137,22 @@ export function bindMeterSlider({
   onInput,
   onChange,
 }) {
+  let wheelFinalizeTimer = null;
+
+  const updateVisuals = (pctStr, v) => {
+    if (label) label.textContent = `${pctStr}%`;
+    if (volFill) volFill.style.width = `${pctStr}%`;
+    if (meterFill) {
+      meterFill.dataset.peakScale = getPeakScale ? getPeakScale(v) : String(v);
+    }
+  };
+
   slider.onpointerdown = () => setSliderDragging(true);
   slider.onpointerup = () => setSliderDragging(false);
   slider.onpointercancel = () => setSliderDragging(false);
   slider.oninput = async (e) => {
     const v = Number(e.target.value) / 100;
-    if (label) label.textContent = `${e.target.value}%`;
-    if (volFill) volFill.style.width = `${e.target.value}%`;
-    if (meterFill) {
-      meterFill.dataset.peakScale = getPeakScale ? getPeakScale(v) : String(v);
-    }
+    updateVisuals(e.target.value, v);
     if (onInput) await onInput(v, e);
   };
   if (onChange) {
@@ -149,6 +162,46 @@ export function bindMeterSlider({
       await onChange(v, e);
     };
   }
+
+  slider.addEventListener(
+    "wheel",
+    async (e) => {
+      if (slider.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const nextPct = computeWheelSliderValue(Number(slider.value), e.deltaY, e.shiftKey);
+      if (nextPct === Number(slider.value)) return;
+      const v = nextPct / 100;
+      slider.value = String(nextPct);
+      updateVisuals(String(nextPct), v);
+      setSliderDragging(true);
+      if (onInput) await onInput(v, e);
+
+      if (wheelFinalizeTimer) clearTimeout(wheelFinalizeTimer);
+      wheelFinalizeTimer = setTimeout(async () => {
+        wheelFinalizeTimer = null;
+        setSliderDragging(false);
+        if (onChange) await onChange(v, e);
+      }, 180);
+    },
+    { passive: false }
+  );
+
+  slider.ondblclick = async (e) => {
+    if (slider.disabled) return;
+    if (wheelFinalizeTimer) {
+      clearTimeout(wheelFinalizeTimer);
+      wheelFinalizeTimer = null;
+    }
+    setSliderDragging(false);
+    slider.value = "100";
+    updateVisuals("100", 1.0);
+    if (onChange) {
+      await onChange(1.0, e);
+    } else if (onInput) {
+      await onInput(1.0, e);
+    }
+  };
 }
 
 const PREF_ACTIVE_TAB = "winsounddeck.ui.active_tab";
