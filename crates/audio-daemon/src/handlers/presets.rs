@@ -7,7 +7,6 @@ use audio_core::{
 };
 
 use super::ipc_ok;
-use crate::app_settings::ActiveLoopback;
 use crate::state::DaemonState;
 
 fn unique_preset_id(existing: &[Preset], name: &str) -> String {
@@ -128,16 +127,13 @@ pub(super) fn handle_apply_preset(
             if let Some((pid, primary_vol)) = matched_pid {
                 let vol = rule.volume.clamp(0.0, 1.0);
                 if let Ok(handle) = LoopbackTee::start(pid, target_ep, vol) {
-                    let ratio = (vol / primary_vol.max(0.05)).clamp(0.0, 4.0);
-                    handle.set_linear_gain(ratio.powi(2));
-                    handle.set_mute(rule.muted || vol <= 0.0);
-                    guard.loopbacks.insert(
-                        (pid, target_ep.id.clone()),
-                        ActiveLoopback {
-                            handle,
-                            volume: vol,
-                            muted: rule.muted || vol <= 0.0,
-                        },
+                    guard.loopbacks.insert_started(
+                        pid,
+                        target_ep.id.clone(),
+                        handle,
+                        vol,
+                        rule.muted,
+                        primary_vol,
                     );
                 }
             }
@@ -261,7 +257,7 @@ pub(super) fn handle_save_current_as_preset(
     let mut guard = state.lock().expect("state lock");
     let mut app_loopbacks = Vec::new();
     let mut seen_lb_keys = std::collections::HashSet::new();
-    for ((pid, target_ep_id), lb) in &guard.loopbacks {
+    for ((pid, target_ep_id), lb) in guard.loopbacks.iter() {
         if let Some(root) = resolve_root_exe_name(*pid) {
             seen_lb_keys.insert((root.to_ascii_lowercase(), target_ep_id.clone()));
             app_loopbacks.push(AppLoopbackRule {

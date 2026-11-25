@@ -5,10 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use audio_core::ipc::{EndpointStatus, SessionStatus};
 use audio_core::{
-    resolve_root_exe_path, AppPolicyClient, AudioEnumerator, DataFlow, DeviceRole, LoopbackHandle,
-    LoopbackTee,
+    resolve_root_exe_path, AppPolicyClient, AudioEnumerator, DataFlow, DeviceRole, LoopbackTee,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::loopback_registry::LoopbackRegistry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecondaryOutputSetting {
@@ -58,12 +59,6 @@ pub struct AppSettingsStore {
     pub known_endpoints: HashMap<String, KnownEndpoint>,
     #[serde(default)]
     pub include_disconnected: bool,
-}
-
-pub struct ActiveLoopback {
-    pub handle: LoopbackHandle,
-    pub volume: f32,
-    pub muted: bool,
 }
 
 impl AppSettingsStore {
@@ -251,7 +246,7 @@ impl AppSettingsStore {
         enumerator: &AudioEnumerator,
         pid: u32,
         applied_pids: &mut HashSet<u32>,
-        loopbacks: &mut HashMap<(u32, String), ActiveLoopback>,
+        loopbacks: &mut LoopbackRegistry,
     ) {
         if pid == 0 || !applied_pids.insert(pid) {
             return;
@@ -295,20 +290,19 @@ impl AppSettingsStore {
             }
 
             for sec in &settings.secondary_outputs {
-                if loopbacks.contains_key(&(pid, sec.endpoint_id.clone())) {
+                if loopbacks.contains(pid, &sec.endpoint_id) {
                     continue;
                 }
                 if let Some(ep) = eps.iter().find(|e| e.id == sec.endpoint_id) {
                     let vol = sec.volume.clamp(0.0, 1.0);
                     if let Ok(handle) = LoopbackTee::start(pid, ep, vol) {
-                        handle.set_mute(sec.muted);
-                        loopbacks.insert(
-                            (pid, sec.endpoint_id.clone()),
-                            ActiveLoopback {
-                                handle,
-                                volume: vol,
-                                muted: sec.muted,
-                            },
+                        loopbacks.insert_started(
+                            pid,
+                            sec.endpoint_id.clone(),
+                            handle,
+                            vol,
+                            sec.muted,
+                            1.0,
                         );
                     }
                 }

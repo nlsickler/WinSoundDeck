@@ -1,9 +1,9 @@
 import {
+  bindMeterSlider,
   createMeterSlider,
   isSliderDragging,
   openEndpointContextMenu,
   pct,
-  setSliderDragging,
   syncKeyedList,
   syncMuteIconButton,
 } from "./dom.js";
@@ -72,21 +72,21 @@ function buildEndpointCard(onRefresh) {
     await onRefresh(true);
   };
 
-  slider.onpointerdown = () => setSliderDragging(true);
-  slider.onpointerup = () => setSliderDragging(false);
-  slider.onpointercancel = () => setSliderDragging(false);
-  slider.oninput = async (e) => {
-    const ep = card._item;
-    const v = Number(e.target.value) / 100;
-    label.textContent = `${e.target.value}%`;
-    volFill.style.width = `${e.target.value}%`;
-    meterFill.dataset.peakScale = ep.muted ? "0" : String(v);
-    await invoke("set_endpoint_volume", {
-      flow: ep.flow,
-      endpointId: ep.id,
-      volume: v,
-    });
-  };
+  bindMeterSlider({
+    slider,
+    volFill,
+    meterFill,
+    label,
+    getPeakScale: (v) => (card._item?.muted ? "0" : String(v)),
+    onInput: async (v) => {
+      const ep = card._item;
+      await invoke("set_endpoint_volume", {
+        flow: ep.flow,
+        endpointId: ep.id,
+        volume: v,
+      });
+    },
+  });
 
   card.oncontextmenu = (e) => openEndpointContextMenu(e, card._item, invoke, onRefresh);
 

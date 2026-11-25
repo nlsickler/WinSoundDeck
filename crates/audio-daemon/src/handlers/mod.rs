@@ -1,4 +1,5 @@
-mod apps;
+mod app_routing;
+mod app_volume;
 mod presets;
 
 use std::sync::{Arc, Mutex};
@@ -8,7 +9,8 @@ use audio_core::{
     log_debug, log_error, log_info, log_warn, AudioEnumerator, DataFlow, DeviceRole, PolicyClient,
 };
 
-use self::apps::{handle_route_app, handle_set_app_output_volume, handle_start_loopback};
+use self::app_routing::{handle_route_app, handle_start_loopback};
+use self::app_volume::handle_set_app_output_volume;
 use self::presets::{handle_apply_preset, handle_save_current_as_preset};
 use crate::state::DaemonState;
 use crate::status::build_daemon_status;
@@ -187,13 +189,7 @@ pub fn handle_request(
             if res.is_ok() {
                 if let Ok(mut guard) = state.lock() {
                     if pid > 0 {
-                        for ((p, _), lb) in guard.loopbacks.iter_mut() {
-                            if *p == pid {
-                                let lb_muted = if muted { true } else { lb.volume <= 0.0 };
-                                lb.muted = lb_muted;
-                                lb.handle.set_mute(lb_muted);
-                            }
-                        }
+                        guard.loopbacks.set_mute_for_pid(pid, muted);
                     }
                     let path = guard.app_settings_path.clone();
                     guard.app_settings.upsert_by_key_or_pid(
@@ -230,7 +226,7 @@ pub fn handle_request(
         } => {
             if let Ok(mut guard) = state.lock() {
                 if pid > 0 {
-                    guard.loopbacks.remove(&(pid, target_endpoint_id.clone()));
+                    guard.loopbacks.remove(pid, &target_endpoint_id);
                 }
                 let path = guard.app_settings_path.clone();
                 guard
