@@ -89,7 +89,7 @@ impl LoopbackHandle {
     }
 
     /// Sets a direct linear gain multiplier (clamped `0.0..=16.0`), used when compensating
-    /// for primary session attenuation (`(secondary / primary)^2`).
+    /// for primary session attenuation (`secondary / primary`).
     pub fn set_linear_gain(&self, linear: f32) {
         let clamped = linear.clamp(0.0, 16.0);
         self.state

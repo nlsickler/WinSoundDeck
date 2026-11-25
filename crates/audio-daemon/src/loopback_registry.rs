@@ -47,12 +47,11 @@ impl LoopbackRegistry {
         handle: LoopbackHandle,
         volume: f32,
         muted: bool,
-        primary_vol: f32,
+        _primary_vol: f32,
     ) {
         let vol = volume.clamp(0.0, 1.0);
         let is_muted = muted || vol <= 0.0;
-        let ratio = compute_loopback_ratio(vol, primary_vol);
-        handle.set_linear_gain(ratio.powi(2));
+        handle.set_linear_gain(vol);
         handle.set_mute(is_muted);
         self.entries.insert(
             (pid, endpoint_id),
@@ -85,15 +84,10 @@ impl LoopbackRegistry {
         }
     }
 
-    pub fn apply_ratios_for_pid(&mut self, pid: u32, primary_eff: f32) {
+    pub fn apply_ratios_for_pid(&mut self, pid: u32, _primary_eff: f32) {
         for ((p, _), lb) in self.entries.iter_mut() {
             if *p == pid {
-                let ratio = if primary_eff > 0.0 {
-                    (lb.volume / primary_eff).clamp(0.0, 4.0)
-                } else {
-                    0.0
-                };
-                lb.handle.set_linear_gain(ratio.powi(2));
+                lb.handle.set_linear_gain(lb.volume.clamp(0.0, 1.0));
                 lb.handle.set_mute(lb.volume <= 0.0);
             }
         }
@@ -151,10 +145,6 @@ impl LoopbackRegistry {
     pub fn iter(&self) -> impl Iterator<Item = (&(u32, String), &ActiveLoopback)> {
         self.entries.iter()
     }
-}
-
-pub fn compute_loopback_ratio(target_vol: f32, primary_vol: f32) -> f32 {
-    (target_vol / primary_vol.max(MIN_PRIMARY_FOR_LOOPBACK)).clamp(0.0, 4.0)
 }
 
 pub fn effective_primary_volume(primary_vol: f32, has_audible_loopback: bool) -> f32 {
@@ -248,12 +238,5 @@ mod tests {
         let secs =
             connected_secondary_volumes(loopbacks.iter().copied(), 42, "ep-primary", &connected);
         assert_eq!(secs, vec![("ep-secondary".to_string(), 0.4)]);
-    }
-
-    #[test]
-    fn compute_loopback_ratio_clamps_and_avoids_div_by_zero() {
-        assert_eq!(compute_loopback_ratio(0.5, 0.0), 4.0);
-        assert_eq!(compute_loopback_ratio(0.5, 0.5), 1.0);
-        assert_eq!(compute_loopback_ratio(0.0, 0.5), 0.0);
     }
 }
